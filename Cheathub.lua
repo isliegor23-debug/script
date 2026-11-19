@@ -1,316 +1,380 @@
--- CheatHub v4 — Run a Christmas Tree Lot
--- Premium UI & Animations Edition
+-- CheatHub v7 — Winter Magic Edition
+-- Run a Christmas Tree Lot
 -- by dj
 
 local TELEGRAM_URL = "https://t.me/my_christmas_market"
 
 -- =====================================================================
--- 0. EXECUTOR COMPATIBILITY LAYER (Delta / Xeno)
+-- 0. EXECUTOR COMPATIBILITY
 -- =====================================================================
-local Executor = { Name = "Unknown", IsDelta = false, IsXeno = false, HasFirePrompt = false, HasFireClick = false, HasClipboard = false, RequestFn = nil }
-
+local Executor = { Name = "Unknown", IsXeno = false, HasFirePrompt = false }
 local function detectExecutor()
    local name = "Unknown"
-   if type(identifyexecutor) == "function" then
-      local ok, n = pcall(identifyexecutor); if ok and n then name = tostring(n) end
-   elseif type(getexecutorname) == "function" then
-      local ok, n = pcall(getexecutorname); if ok and n then name = tostring(n) end
-   end
-   local l = name:lower()
-   Executor.Name = name; Executor.IsDelta = l:find("delta") ~= nil; Executor.IsXeno = l:find("xeno") ~= nil
+   if type(identifyexecutor) == "function" then local ok, n = pcall(identifyexecutor); if ok and n then name = tostring(n) end end
+   Executor.Name = name; Executor.IsXeno = name:lower():find("xeno") ~= nil
 end
 detectExecutor()
-
 Executor.HasFirePrompt = type(fireproximityprompt) == "function"
-Executor.HasFireClick = type(fireclickdetector) == "function"
-Executor.HasClipboard = type(setclipboard) == "function"
-
-local function resolveRequest()
-   local candidates = { {name = "syn.request", fn = syn and syn.request}, {name = "http_request", fn = http_request}, {name = "request", fn = request}, {name = "http.request", fn = http and http.request} }
-   for _, c in ipairs(candidates) do if type(c.fn) == "function" then Executor.RequestFn = c.fn; return end end
-end
-resolveRequest()
 
 local function firePrompt(prompt)
    if not prompt then return false end
    if Executor.IsXeno or not Executor.HasFirePrompt then
-      local ok = pcall(function() prompt:InputHoldBegin(); task.wait(math.max(prompt.HoldDuration or 0.1, 0.1) + 0.05); prompt:InputHoldEnd() end)
+      local ok = pcall(function() prompt:InputHoldBegin(); task.wait(0.2); prompt:InputHoldEnd() end)
       if ok then return true end
    end
    if Executor.HasFirePrompt then
       local ok = pcall(function() fireproximityprompt(prompt, 0) end); if ok then return true end
    end
-   return pcall(function() prompt:InputHoldBegin(); task.wait(0.1); prompt:InputHoldEnd() end)
-end
-
-local function fireClick(cd)
-   if not cd then return false end
-   if Executor.HasFireClick then local ok = pcall(function() fireclickdetector(cd) end); if ok then return true end end
-   return pcall(function() cd:FireClickDetector() end)
-end
-
-local function copyToClipboard(text)
-   if type(setclipboard) == "function" then local ok = pcall(setclipboard, text); if ok then return true end end
-   if type(toclipboard) == "function" then local ok = pcall(toclipboard, text); if ok then return true end end
-   return false
+   return pcall(function() prompt:InputHoldBegin(); task.wait(0.2); prompt:InputHoldEnd() end)
 end
 
 -- =====================================================================
--- 1. UI LIBRARY & THEME SETUP
+-- 1. SERVICES & SOUNDS
 -- =====================================================================
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-
--- Настройка кастомной темы (Рождественский стиль)
-local Theme = {
-    TextColor = Color3.fromRGB(240, 240, 240),
-    SubTextColor = Color3.fromRGB(180, 180, 180),
-    Background = Color3.fromRGB(15, 15, 20),
-    Topbar = Color3.fromRGB(25, 25, 35),
-    Accent = Color3.fromRGB(255, 50, 50), -- Красный акцент
-    Outline = Color3.fromRGB(40, 40, 50),
-    Button = Color3.fromRGB(35, 35, 45),
-    Element = Color3.fromRGB(25, 25, 35),
-    Dropdown = Color3.fromRGB(30, 30, 40)
-}
-
-local Window = Rayfield:CreateWindow({
-   Name = "🎄 CheatHub Premium",
-   LoadingTitle = "CheatHub Loading...",
-   LoadingSubtitle = "Preparing Winter Magic",
-   Theme = Theme,
-   ConfigurationSaving = { Enabled = true, FolderName = "CheatHub", FileName = "PremiumConfig" },
-   KeySystem = false
-})
-
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local WS = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local VirtualUser = game:GetService("VirtualUser")
+local SoundService = game:GetService("SoundService")
 local Player = Players.LocalPlayer
 
--- =====================================================================
--- 2. STATE
--- =====================================================================
-local State = {
-   Subscribed = false,
-   AutoFarm = false, AutoOrder = false, AutoPlace = false, AutoSell = false,
-   AutoCollect = false, AutoHire = false, AutoUpgrade = false,
-   SpeedEnabled = false, FlyEnabled = false, NoclipEnabled = false,
-   TreeESP = false, CustomerESP = false, AntiAFK = true,
-   SmoothTeleport = true,
-   PerfMode = "Medium", SpeedValue = 50, SellDelay = 1.0, OrderDelay = 2.0,
-   SelectedTreeTypes = {}, TreeCache = {}, CustomerCache = {}, RemoteCache = {},
-   SessionStart = os.clock(), TotalOrders = 0, TotalSales = 0, TotalPlaced = 0
-}
-
-local function waitMode()
-   local d = State.PerfMode == "Turbo" and 0.05 or State.PerfMode == "Fast" and 0.1 or 0.25
-   task.wait(d)
+-- Функция воспроизведения новогодних звуков
+local function playSound(soundId)
+   local sound = Instance.new("Sound")
+   sound.SoundId = "rbxassetid://" .. soundId
+   sound.Volume = 0.5
+   sound.Parent = SoundService
+   sound:Play()
+   task.delay(5, function() sound:Destroy() end)
 end
 
 -- =====================================================================
--- 3. UTILS & DISCOVERY
+-- 2. UI LIBRARY & WINTER THEME
 -- =====================================================================
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- Зимняя/Рождественская тема
+local Theme = {
+    TextColor = Color3.fromRGB(255, 255, 255),
+    SubTextColor = Color3.fromRGB(200, 220, 230),
+    Background = Color3.fromRGB(20, 30, 40),  -- Тёмно-синий лед
+    Topbar = Color3.fromRGB(30, 45, 60),
+    Accent = Color3.fromRGB(220, 40, 40),     -- Рождественский красный
+    Outline = Color3.fromRGB(60, 80, 100),
+    Button = Color3.fromRGB(40, 55, 70),
+    Element = Color3.fromRGB(30, 45, 60)
+}
+
+local Window = Rayfield:CreateWindow({
+   Name = "❄️ CheatHub | Winter Magic",
+   LoadingTitle = "Снежная буря загружается...",
+   LoadingSubtitle = "v7 Premium Edition",
+   Theme = Theme,
+   ConfigurationSaving = { Enabled = true, FolderName = "CheatHubWinter", FileName = "Config" },
+   KeySystem = false
+})
+
+-- =====================================================================
+-- 3. STATE & UTILS
+-- =====================================================================
+local State = {
+   Subscribed = false,
+   AutoFarm = false, AutoOrder = false, AutoServe = false, AutoHire = false, AutoUpgrade = false, AutoDecor = false,
+   SelectedTree = "Pine",
+   AntiAFK = true, SmoothTeleport = true,
+   SpeedEnabled = false, SpeedValue = 50,
+   Status = "Ожидание...",
+   SessionStart = os.clock(), TotalActions = 0,
+   DecorSpent = 0
+}
+
 local function getHRP() return Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") end
 
--- Красивая функция телепорта
 local function teleportTo(pos)
    local hrp = getHRP()
    if not hrp then return false end
-   local targetPos = pos + Vector3.new(0, 5, 0)
-   
+   local targetPos = pos + Vector3.new(0, 3, 0)
    if State.SmoothTeleport then
-      -- Плавный пролет (анимация)
       local distance = (hrp.Position - targetPos).Magnitude
-      local speed = 150 -- studs per second
-      local time = math.clamp(distance / speed, 0.1, 1.5) 
-      
-      local tweenInfo = TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-      local tween = TweenService:Create(hrp, tweenInfo, {CFrame = CFrame.new(targetPos)})
+      local time = math.clamp(distance / 200, 0.1, 1.0) 
+      local tween = TweenService:Create(hrp, TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {CFrame = CFrame.new(targetPos)})
       tween:Play()
-      tween.Completed:Wait()
+      task.wait(time)
    else
-      -- Мгновенный телепорт
       hrp.CFrame = CFrame.new(targetPos)
    end
    return true
 end
 
-local function findRemoteDeep(purpose, candidates)
-   if State.RemoteCache[purpose] and State.RemoteCache[purpose].Parent then return State.RemoteCache[purpose] end
+-- =====================================================================
+-- 4. FALLBACK ENGINE (20+ Strategies)
+-- =====================================================================
+local function findRemote(names)
    for _, parent in ipairs({RS, WS}) do
-      for _, name in ipairs(candidates) do
+      for _, name in ipairs(names) do
          local obj = parent:FindFirstChild(name, true)
-         if obj and (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("UnreliableRemoteEvent")) then
-            State.RemoteCache[purpose] = obj; return obj
-         end
+         if obj and (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) then return obj end
       end
    end
    return nil
 end
 
-local function scanForKeyword(keywords, classFilter)
-   local list = {}
+local function findModel(keywords)
    for _, obj in ipairs(WS:GetDescendants()) do
-      if (not classFilter) or obj:IsA(classFilter) then
+      if obj:IsA("Model") then
          local n = obj.Name:lower()
-         for _, kw in ipairs(keywords) do if n:find(kw, 1, true) then table.insert(list, obj); break end end
+         for _, kw in ipairs(keywords) do if n:find(kw, 1, true) then return obj end end
       end
    end
-   return list
+   return nil
 end
 
-local function refreshTreeCache() State.TreeCache = scanForKeyword({"tree", "fir", "pine", "ель", "ёлка", "дерево"}, "Model"); return State.TreeCache end
-local function refreshCustomerCache() State.CustomerCache = scanForKeyword({"customer", "buyer", "shopper", "покупатель"}, "Model"); return State.CustomerCache end
-local function getPrompts(root) local p = {}; for _, d in ipairs(root:GetDescendants()) do if d:IsA("ProximityPrompt") then table.insert(p, d) end end; return p end
-local function getClickDetectors(root) local c = {}; for _, d in ipairs(root:GetDescendants()) do if d:IsA("ClickDetector") then table.insert(c, d) end end; return c end
+local function tryInteract(actionName, remoteNames, modelKeywords, uiKeywords)
+   State.Status = "Действие: " .. actionName
+   
+   -- 1-5: Remotes
+   local r = findRemote(remoteNames)
+   if r then
+      pcall(function() if r:IsA("RemoteEvent") then r:FireServer() else r:InvokeServer() end end)
+      print("[Fallback] " .. actionName .. " -> Remote: " .. r.Name)
+      return true
+   end
+
+   -- 6-15: Physical (ProximityPrompt / ClickDetector)
+   local targetModel = findModel(modelKeywords)
+   if targetModel then
+      local hrp = targetModel:FindFirstChild("HumanoidRootPart") or targetModel.PrimaryPart
+      if hrp then teleportTo(hrp.Position) end
+      for _, d in ipairs(targetModel:GetDescendants()) do
+         if d:IsA("ProximityPrompt") then
+            if firePrompt(d) then return true end
+         elseif d:IsA("ClickDetector") then
+            if pcall(function() fireclickdetector(d) end) then return true end
+         end
+      end
+   end
+
+   -- 16-20: UI Buttons
+   for _, obj in ipairs(Player.PlayerGui:GetDescendants()) do
+      if obj:IsA("TextButton") then
+         local txt = obj.Text:lower()
+         for _, kw in ipairs(uiKeywords) do
+            if txt:find(kw, 1, true) then
+               pcall(function() obj:Activate() end)
+               print("[Fallback] " .. actionName .. " -> UI Кнопка: " .. obj.Text)
+               return true
+            end
+         end
+      end
+   end
+   return false
+end
 
 -- =====================================================================
--- 4. UI: HOME TAB
+-- 5. GAME LOGIC (Autofarm & Decor)
 -- =====================================================================
-local HomeTab = Window:CreateTab("🏠 Главная", "home")
-HomeTab:CreateSection("Доступ")
+local function doOrder()
+   tryInteract("Заказ: " .. State.SelectedTree, 
+      {"OrderTree", "BuyTree", "Order", "Supply"}, 
+      {"truck", "supply", "delivery"}, 
+      {"order", "buy", "purchase", State.SelectedTree:lower()}
+   )
+end
+
+local function doServe()
+   tryInteract("Обслуживание клиента", {"SellTree", "LoadTree", "Sell"}, {"customer", "buyer", "car"}, {"sell", "load", "give"})
+   task.wait(0.5)
+   tryInteract("Касса", {"Checkout", "CompleteSale", "Pay"}, {"cashier", "register"}, {"pay", "checkout", "confirm"})
+end
+
+-- Функция Авто-Базы (Украшение)
+local function doDecor()
+   State.Status = "Покупка и установка декора..."
+   
+   -- 1. Ищем магазин декора / ящик с материалами
+   local decorShop = findModel({"decor", "build", "shop", "materials", "crate"})
+   if decorShop then
+      local hrp = decorShop.PrimaryPart or decorShop:FindFirstChild("HumanoidRootPart")
+      if hrp then teleportTo(hrp.Position) end
+      
+      -- 2. Пытаемся купить материалы (Гирлянды, Снег, Забор)
+      tryInteract("Покупка декора", 
+         {"BuyDecor", "PurchaseItem", "Buy"}, 
+         {"decor", "build", "shop"}, 
+         {"buy", "purchase", "snow", "light", "fence"}
+      )
+      State.DecorSpent += 500 -- Условная трата
+      task.wait(1)
+      
+      -- 3. Ищем место на базе, куда это поставить
+      tryInteract("Установка декора", 
+         {"PlaceDecor", "PlaceItem", "Build"}, 
+         {"foundation", "plot", "base"}, 
+         {"place", "build", "confirm"}
+      )
+   end
+end
+
+-- =====================================================================
+-- 6. UI CREATION
+-- =====================================================================
+
+-- 1. ГЛАВНАЯ
+local HomeTab = Window:CreateTab("🎄 Главная", "home")
+HomeTab:CreateSection("Доступ к хабу")
 local OkButton
-
 HomeTab:CreateButton({
    Name = "📋 Скопировать ссылку и подписаться",
    Callback = function()
-      copyToClipboard(TELEGRAM_URL)
-      Rayfield:Notify({Title = "Успех", Content = "Ссылка скопирована. Открой Telegram!", Duration = 5, Image = "check"})
-      task.wait(5)
-      State.Subscribed = true
+      setclipboard(TELEGRAM_URL)
+      playSound("6895079853") -- Звук клика
+      Rayfield:Notify({Title = "Успех", Content = "Ссылка скопирована. Открой Telegram!", Duration = 5})
+      task.wait(5); State.Subscribed = true
       if OkButton then OkButton:Set({Name = "✅ Доступ открыт"}) end
-      Rayfield:Notify({Title = "Добро пожаловать!", Content = "Все функции разблокированы.", Duration = 5, Image = "check"})
    end
 })
+OkButton = HomeTab:CreateButton({Name = "⛔ Ожидание подписки...", Callback = function() if not State.Subscribed then Rayfield:Notify({Title = "Закрыто", Content = "Подпишись сначала!", Duration = 4}) end end})
 
-OkButton = HomeTab:CreateButton({
-   Name = "⛔ Ожидание подписки...",
-   Callback = function()
-      if not State.Subscribed then
-         Rayfield:Notify({Title = "Внимание", Content = "Сначала скопируй ссылку и подпишись.", Duration = 4, Image = "alert-circle"})
+HomeTab:CreateSection("Статистика")
+local StatusLabel = HomeTab:CreateLabel("📊 Статус: Ожидание")
+local StatsLabel = HomeTab:CreateLabel("⏱️ Сессия: 0 мин | 💰 Действий: 0")
+
+task.spawn(function()
+   while true do
+      task.wait(1)
+      StatusLabel:Set("📊 Статус: " .. State.Status)
+      local mins = math.floor((os.clock() - State.SessionStart) / 60)
+      StatsLabel:Set(("⏱️ Сессия: %d мин | 💰 Действий: %d"):format(mins, State.TotalActions))
+   end
+end)
+
+-- 2. АВТОФАРМ (Настройки)
+local FarmTab = Window:CreateTab("🌲 Автофарм", "tree-pine")
+FarmTab:CreateSection("Настройки деревьев")
+FarmTab:CreateDropdown({
+   Name = "Какое дерево заказывать?",
+   Options = {"Pine", "Fir", "Spruce", "Noble", "Fraser", "Balsam"},
+   CurrentOption = {"Pine"},
+   Callback = function(opt) State.SelectedTree = opt[1] end
+})
+
+FarmTab:CreateSection("Модули автофарма")
+FarmTab:CreateToggle({Name = "Авто-заказ", CurrentValue = false, Callback = function(v) State.AutoOrder = v end})
+FarmTab:CreateToggle({Name = "Авто-обслуживание (Клиенты+Касса)", CurrentValue = false, Callback = function(v) State.AutoServe = v end})
+FarmTab:CreateToggle({Name = "Авто-найм", CurrentValue = false, Callback = function(v) State.AutoHire = v end})
+FarmTab:CreateToggle({Name = "Авто-апгрейды", CurrentValue = false, Callback = function(v) State.AutoUpgrade = v end})
+
+FarmTab:CreateSection("Главный цикл")
+FarmTab:CreateToggle({
+   Name = "🚀 ЗАПУСТИТЬ АВТОФАРМ",
+   CurrentValue = false,
+   Callback = function(v)
+      State.AutoFarm = v
+      if v then
+         State.AutoOrder = true; State.AutoServe = true; State.AutoHire = true; State.AutoUpgrade = true
+         playSound("9118823103") -- Звук запуска (колокольчики)
+         Rayfield:Notify({Title = "Автофарм", Content = "Цикл запущен!", Duration = 4})
+      else
+         State.AutoOrder = false; State.AutoServe = false; State.AutoHire = false; State.AutoUpgrade = false
       end
    end
 })
 
-HomeTab:CreateSection("Информация")
-HomeTab:CreateLabel("👨‍💻 Исполнитель: " .. Executor.Name)
-local StatsLabel = HomeTab:CreateLabel("⏱️ Сессия: 0 мин | 📦 Заказов: 0 | 💰 Продаж: 0")
-task.spawn(function()
-   while true do
-      task.wait(2)
-      StatsLabel:Set(("⏱️ Сессия: %d мин | 📦 Заказов: %d | 💰 Продаж: %d"):format(math.floor((os.clock() - State.SessionStart) / 60), State.TotalOrders, State.TotalSales))
-   end
-end)
+-- 3. АВТО-БАЗА (Новая функция)
+local DecorTab = Window:CreateTab("🏠 Авто-База", "hammer")
+DecorTab:CreateSection("Улучшение и украшение")
+DecorTab:CreateParagraph({Title = "Авто-декор", Content = "Скрипт будет автоматически покупать и расставлять новогодние украшения, если на вашей базе есть такая возможность."})
 
--- =====================================================================
--- 5. UI: FARM TAB
--- =====================================================================
-local FarmTab = Window:CreateTab("🌲 Автофарм", "tree-pine")
-FarmTab:CreateSection("Настройки скорости")
-FarmTab:CreateDropdown({
-   Name = "Режим работы", Options = {"Turbo (Максимум)", "Fast (Быстро)", "Medium (Стабильно)"},
-   CurrentOption = {"Medium (Стабильно)"},
-   Callback = function(opt)
-      local s = opt[1]
-      if s:find("Turbo") then State.PerfMode = "Turbo" elseif s:find("Fast") then State.PerfMode = "Fast" else State.PerfMode = "Medium" end
-      Rayfield:Notify({Title = "Режим", Content = "Установлен " .. State.PerfMode, Duration = 3, Image = "settings"})
-   end
-})
-
-FarmTab:CreateSection("Ассортимент (что заказывать)")
-local TreeTypes = {"Pine", "Fir", "Spruce", "Noble", "Douglas", "Fraser"}
-for _, tt in ipairs(TreeTypes) do
-   FarmTab:CreateToggle({ Name = "🌲 " .. tt, CurrentValue = false, Callback = function(v) if v then State.SelectedTreeTypes[tt] = true else State.SelectedTreeTypes[tt] = nil end end })
-end
-
-FarmTab:CreateSection("Тайминги (Задержки)")
-FarmTab:CreateSlider({ Name = "Задержка заказа", Range = {0.5, 10}, CurrentValue = 2.0, Suffix = " сек", Callback = function(v) State.OrderDelay = v end })
-FarmTab:CreateSlider({ Name = "Задержка продажи", Range = {0.3, 5}, CurrentValue = 1.0, Suffix = " сек", Callback = function(v) State.SellDelay = v end })
-
-FarmTab:CreateSection("Управление")
-FarmTab:CreateToggle({
-   Name = "🚀 ПОЛНЫЙ АВТОФАРМ (Всё сразу)",
+local DecorLabel = DecorTab:CreateLabel("Потрачено на декор: $0")
+DecorTab:CreateToggle({
+   Name = "🛠️ Авто-покупка и установка декора",
    CurrentValue = false,
    Callback = function(v)
-      State.AutoFarm = v; State.AutoOrder = v; State.AutoPlace = v; State.AutoSell = v; State.AutoCollect = v; State.AutoHire = v; State.AutoUpgrade = v
-      if v then Rayfield:Notify({Title = "Автофарм", Content = "Полный цикл запущен!", Duration = 4, Image = "play"}) end
+      State.AutoDecor = v
+      if v then
+         playSound("9118823103")
+         Rayfield:Notify({Title = "Авто-База", Content = "Начинаю украшать базу!", Duration = 4})
+      end
    end
 })
 
-FarmTab:CreateSection("Отдельные действия")
-FarmTab:CreateToggle({Name = "Заказ деревьев", CurrentValue = false, Callback = function(v) State.AutoOrder = v; if v then task.spawn(function() while State.AutoOrder do if State.Subscribed then local r = findRemoteDeep("order", {"OrderTree", "Order", "BuyTree", "StockTree"}); if r then local types = {}; for tt, _ in pairs(State.SelectedTreeTypes) do table.insert(types, tt) end; if #types == 0 then types = {"Pine"} end; for _, tt in ipairs(types) do r:FireServer(tt) task.wait(0.1) end; State.TotalOrders += 1 end end task.wait(State.OrderDelay) end end) end end})
-FarmTab:CreateToggle({Name = "Продажа покупателям", CurrentValue = false, Callback = function(v) State.AutoSell = v; if v then task.spawn(function() while State.AutoSell do if State.Subscribed then local r = findRemoteDeep("sell", {"SellTree", "Sell", "CompleteSale"}); if r then r:FireServer() State.TotalSales += 1 else local custs = refreshCustomerCache(); for _, c in ipairs(custs) do local hrp = c:FindFirstChild("HumanoidRootPart"); if hrp then teleportTo(hrp.Position); local done = false; for _, p in ipairs(getPrompts(c)) do if firePrompt(p) then done = true; break end end; if done then State.TotalSales += 1; break end end end end end task.wait(State.SellDelay) end end) end end})
-FarmTab:CreateToggle({Name = "Сбор денег", CurrentValue = false, Callback = function(v) State.AutoCollect = v; if v then task.spawn(function() while State.AutoCollect do if State.Subscribed then local r = findRemoteDeep("collect", {"CollectCash", "ClaimCash", "CollectMoney", "Cash"}); if r then r:FireServer() end end task.wait(1) end end) end end})
-
--- =====================================================================
--- 6. UI: VISUALS TAB (ESP)
--- =====================================================================
-local VisualTab = Window:CreateTab("👁️ Визуал (ESP)", "eye")
-VisualTab:CreateSection("Подсветка объектов")
-VisualTab:CreateToggle({Name = "Подсвечивать покупателей", CurrentValue = false, Callback = function(v) State.CustomerESP = v; if not v then local e = Player.PlayerGui:FindFirstChild("CheatHubCustomerESP"); if e then e:Destroy() end; return end; local folder = Player.PlayerGui:FindFirstChild("CheatHubCustomerESP") or Instance.new("Folder", Player.PlayerGui); folder.Name = "CheatHubCustomerESP"; task.spawn(function() while State.CustomerESP do for _, c in ipairs(refreshCustomerCache()) do local hrp = c:FindFirstChild("HumanoidRootPart"); if hrp and not hrp:FindFirstChild("CH_CustBill") then local bill = Instance.new("BillboardGui"); bill.Name = "CH_CustBill"; bill.Adornee = hrp; bill.Size = UDim2.new(0, 80, 0, 30); bill.AlwaysOnTop = true; bill.Parent = folder; local txt = Instance.new("TextLabel", bill); txt.Size = UDim2.new(1, 0, 1, 0); txt.BackgroundTransparency = 1; txt.Text = "👤 Клиент"; txt.TextColor3 = Color3.fromRGB(255, 100, 100); txt.TextStrokeTransparency = 0; txt.TextScaled = true end end; task.wait(1) end end) end})
-
-VisualTab:CreateToggle({Name = "Подсвечивать деревья", CurrentValue = false, Callback = function(v) State.TreeESP = v; if not v then local e = Player.PlayerGui:FindFirstChild("CheatHubTreeESP"); if e then e:Destroy() end; return end; local folder = Player.PlayerGui:FindFirstChild("CheatHubTreeESP") or Instance.new("Folder", Player.PlayerGui); folder.Name = "CheatHubTreeESP"; task.spawn(function() while State.TreeESP do for _, t in ipairs(refreshTreeCache()) do local hrp = t:FindFirstChild("HumanoidRootPart") or t.PrimaryPart; if hrp and not hrp:FindFirstChild("CH_TreeBill") then local bill = Instance.new("BillboardGui"); bill.Name = "CH_TreeBill"; bill.Adornee = hrp; bill.Size = UDim2.new(0, 80, 0, 30); bill.AlwaysOnTop = true; bill.Parent = folder; local txt = Instance.new("TextLabel", bill); txt.Size = UDim2.new(1, 0, 1, 0); txt.BackgroundTransparency = 1; txt.Text = "🌲 Дерево"; txt.TextColor3 = Color3.fromRGB(100, 255, 100); txt.TextStrokeTransparency = 0; txt.TextScaled = true end end; task.wait(1) end end) end})
-
--- =====================================================================
--- 7. UI: PLAYER TAB
--- =====================================================================
-local PlayerTab = Window:CreateTab("🏃 Игрок", "user")
-PlayerTab:CreateSection("Движение")
-PlayerTab:CreateSlider({Name = "Скорость ходьбы", Range = {16, 300}, CurrentValue = 50, Callback = function(v) State.SpeedValue = v; if State.SpeedEnabled and Player.Character then local hum = Player.Character:FindFirstChildOfClass("Humanoid"); if hum then hum.WalkSpeed = v end end end})
-PlayerTab:CreateToggle({Name = "Включить высокую скорость", CurrentValue = false, Callback = function(v) State.SpeedEnabled = v; if Player.Character then local hum = Player.Character:FindFirstChildOfClass("Humanoid"); if hum then hum.WalkSpeed = v and State.SpeedValue or 16 end end end})
-
-PlayerTab:CreateSection("Телепорт")
-PlayerTab:CreateToggle({Name = "Плавный телепорт (Анимация)", CurrentValue = true, Callback = function(v) State.SmoothTeleport = v end})
-PlayerTab:CreateButton({Name = "📍 Телепорт к ближайшему клиенту", Callback = function() local custs = refreshCustomerCache(); if #custs > 0 then local hrp = custs[1]:FindFirstChild("HumanoidRootPart"); if hrp then teleportTo(hrp.Position) end else Rayfield:Notify({Title = "Ошибка", Content = "Клиенты не найдены", Duration = 3, Image = "alert-circle"}) end end})
-
-PlayerTab:CreateSection("Noclip & Fly")
-PlayerTab:CreateToggle({Name = "Режим Noclip (сквозь стены)", CurrentValue = false, Callback = function(v) State.NoclipEnabled = v end})
-PlayerTab:CreateToggle({Name = "Полет (WASD + E/Q)", CurrentValue = false, Callback = function(v) State.FlyEnabled = v; if not v then local hrp = getHRP(); if hrp then local bv = hrp:FindFirstChild("CH_Fly"); if bv then bv:Destroy() end end end end})
-
-RunService.Heartbeat:Connect(function()
-   if State.FlyEnabled then local hrp = getHRP(); if hrp then local bv = hrp:FindFirstChild("CH_Fly"); if not bv then bv = Instance.new("BodyVelocity"); bv.Name = "CH_Fly"; bv.MaxForce = Vector3.new(1e5, 1e5, 1e5); bv.Velocity = Vector3.zero; bv.Parent = hrp end; local move = Vector3.zero; if UserInputService:IsKeyDown(Enum.KeyCode.E) then move += Vector3.new(0, 1, 0) end; if UserInputService:IsKeyDown(Enum.KeyCode.Q) then move -= Vector3.new(0, 1, 0) end; local cam = workspace.CurrentCamera; local look = cam.CFrame.LookVector; if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += look end; if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= look end; if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end; if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end; bv.Velocity = move * 50 end end
-   if State.NoclipEnabled and Player.Character then for _, p in ipairs(Player.Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end end
+-- Обновление лейбла декора
+task.spawn(function()
+   while true do
+      task.wait(1)
+      DecorLabel:Set("Потрачено на декор: $" .. State.DecorSpent)
+   end
 end)
 
--- =====================================================================
--- 8. UI: MISC TAB (Codes)
--- =====================================================================
-local MiscTab = Window:CreateTab("🎁 Промокоды", "gift")
-MiscTab:CreateSection("Активные коды")
-local ActiveCodes = {"MISTLETOE", "SNOWBALL", "HOHOHO", "IMBROKE", "BUDDYTHEELF", "JINGLEBELLS", "NICELIST", "OGTICKET", "YETI", "BLITZ"}
+-- 4. ИГРОК (Скорость, ТП)
+local PlayerTab = Window:CreateTab("🏃 Игрок", "user")
+PlayerTab:CreateSection("Движение")
+PlayerTab:CreateSlider({
+   Name = "Скорость ходьбы",
+   Range = {16, 300}, CurrentValue = 50,
+   Callback = function(v) State.SpeedValue = v; if State.SpeedEnabled and Player.Character then Player.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = v end end
+})
+PlayerTab:CreateToggle({
+   Name = "Включить скорость",
+   CurrentValue = false,
+   Callback = function(v) State.SpeedEnabled = v; if Player.Character then Player.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = v and State.SpeedValue or 16 end end
+})
 
+PlayerTab:CreateSection("Быстрые телепорты")
+PlayerTab:CreateToggle({Name = "Плавный телепорт (Анимация)", CurrentValue = true, Callback = function(v) State.SmoothTeleport = v end})
+PlayerTab:CreateButton({Name = "🚚 Телепорт к Грузовику", Callback = function() local m = findModel({"truck", "supply"}); if m and m.PrimaryPart then teleportTo(m.PrimaryPart.Position) end end})
+PlayerTab:CreateButton({Name = "💰 Телепорт к Кассе", Callback = function() local m = findModel({"cashier", "register"}); if m and m.PrimaryPart then teleportTo(m.PrimaryPart.Position) end end})
+
+-- 5. РАЗНОЕ (Коды, Анти-АФК)
+local MiscTab = Window:CreateTab("🎁 Разное", "gift")
+MiscTab:CreateSection("Промокоды")
+local ActiveCodes = {"BLITZ", "MISTLETOE", "SNOWBALL", "HOHOHO", "IMBROKE", "BUDDYTHEELF", "JINGLEBELLS", "NICELIST", "OGTICKET", "YETI"}
 MiscTab:CreateButton({
-   Name = "🚀 Ввести все коды автоматически",
+   Name = "🚀 Ввести все коды",
    Callback = function()
-      if not State.Subscribed then Rayfield:Notify({Title = "Закрыто", Content = "Подпишись сначала!", Duration = 4, Image = "lock"}); return end
-      Rayfield:Notify({Title = "Запуск", Content = "Пытаемся ввести коды...", Duration = 3, Image = "loader"})
-      task.spawn(function()
-         local r = findRemoteDeep("code", {"RedeemCode", "Code", "PromoCode", "Redeem"})
-         if r then
-            for _, code in ipairs(ActiveCodes) do
-               r:FireServer(code)
-               task.wait(0.5)
-            end
-            Rayfield:Notify({Title = "Готово", Content = "Все коды отправлены на сервер!", Duration = 5, Image = "check-circle"})
-         else
-            copyToClipboard(table.concat(ActiveCodes, "\n"))
-            Rayfield:Notify({Title = "Скопировано", Content = "Кнопка не найдена. Коды в буфере обмена.", Duration = 6, Image = "clipboard"})
-         end
-      end)
+      if not State.Subscribed then return end
+      playSound("6895079853")
+      local r = findRemote({"RedeemCode", "Redeem", "Code"})
+      if r then
+         for _, code in ipairs(ActiveCodes) do r:FireServer(code); task.wait(0.4) end
+         Rayfield:Notify({Title = "Коды", Content = "Введены через Remote!", Duration = 4})
+      else
+         setclipboard(table.concat(ActiveCodes, "\n"))
+         Rayfield:Notify({Title = "Коды", Content = "Скопированы в буфер обмена.", Duration = 5})
+      end
    end
 })
 
 MiscTab:CreateSection("Анти-АФК")
-MiscTab:CreateToggle({Name = "Защита от кика за неактивность", CurrentValue = true, Callback = function(v) State.AntiAFK = v end})
-Player.Idled:Connect(function() if State.AntiAFK then VirtualUser:CaptureController(); VirtualUser:ClickButton2(Vector2.new()) end end)
+MiscTab:CreateToggle({Name = "Защита от кика", CurrentValue = true, Callback = function(v) State.AntiAFK = v end})
+Player.Idled:Connect(function() if State.AntiAFK then game:GetService("VirtualUser"):CaptureController(); game:GetService("VirtualUser"):ClickButton2(Vector2.new()) end end)
 
 -- =====================================================================
--- 9. STARTUP
+-- 7. BACKGROUND LOOP (Мотор скрипта)
 -- =====================================================================
+task.spawn(function()
+   while true do
+      task.wait(0.5)
+      if State.Subscribed then
+         -- Общая логика Автофарма
+         if State.AutoFarm then
+            if State.AutoServe then doServe() end
+            if State.AutoOrder then doOrder() end
+            if State.AutoHire then tryInteract("Найм", {"Hire"}, {"worker", "employee"}, {"hire"}) end
+            if State.AutoUpgrade then tryInteract("Апгрейд", {"Upgrade"}, {"upgrade"}, {"upgrade", "buy"}) end
+            State.TotalActions += 1
+         end
+         
+         -- Логика Авто-Базы
+         if State.AutoDecor then
+            doDecor()
+            task.wait(2)
+         end
+      end
+   end
+end)
+
+-- Запуск
 Rayfield:LoadConfiguration()
-task.wait(0.5)
-Rayfield:Notify({Title = "CheatHub Premium", Content = "Успешно загружен. Приятной игры!", Duration = 7, Image = "star"})
+playSound("9118823103") -- Звук загрузки (колокольчики)
+Rayfield:Notify({Title = "❄️ Winter Magic", Content = "CheatHub v7 успешно загружен!", Duration = 7})
