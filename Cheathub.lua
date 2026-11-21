@@ -1,4 +1,4 @@
--- CheatHub v2 — Winter Magic Edition
+-- CheatHub v11 — Winter Magic Edition
 -- Run a Christmas Tree Lot
 -- by dj
 
