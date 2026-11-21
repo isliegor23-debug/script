@@ -1,4 +1,4 @@
--- CheatHub v10 — Winter Magic Edition
+-- CheatHub v2 — Winter Magic Edition
 -- Run a Christmas Tree Lot
 -- by dj
 
@@ -43,6 +43,7 @@ local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local Lighting = game:GetService("Lighting")
 local PPS = game:GetService("ProximityPromptService")
+local GuiService = game:GetService("GuiService")
 local Player = Players.LocalPlayer
 
 local Connections = {}
@@ -146,6 +147,27 @@ local function matchesAny(text, kws)
    return false
 end
 
+-- Совпадение по началу слова: «load» найдёт «Load Tree», но не «Unload»
+local function matchesStart(text, kws)
+   for _, kw in ipairs(kws) do
+      local init = 1
+      while true do
+         local s = text:find(kw, init, true)
+         if not s then break end
+         local before = (s > 1) and text:sub(s - 1, s - 1) or " "
+         if not before:match("%w") then return true end
+         init = s + 1
+      end
+   end
+   return false
+end
+
+-- «TreeRack_01» → «tree rack 01»
+local function normalizeText(s)
+   s = s:gsub("(%l)(%u)", "%1 %2"):gsub("[_%-]+", " ")
+   return s:lower()
+end
+
 -- Кэш для редких поисков (статы и т.п.)
 local Cache = {}
 local function cached(key, finder, ttl)
@@ -238,10 +260,18 @@ local State = {
    TotalActions = 0, FarmActions = 0, DecorActions = 0, LastSuccess = 0,
    SafePos = nil, Firing = false,
    BindTarget = "order", TestTarget = "order", TeachCat = "pickup", Pick = "",
+   -- расстановка деревьев
+   PlaceBtnKW = { "place", "put down", "set down" },
+   ZoneMode = "auto", ZoneSpacing = 8, MaxPlaceTries = 8, PlaceSettle = 0.3,
+   ZoneKW = { "zone", "placement", "grid", "lot area", "ground", "floor" },
+   JustPicked = 0, CarryUntil = 0, PlaceFailUntil = 0, PlacedCount = 0,
 }
 
 -- Цена: текущая и базовая (узнаются из привязки «Цена»)
 local Price = { value = nil, base = nil }
+
+-- Зона расстановки деревьев: углы A/B, свои точки и сетка точек
+local Zone = { A = nil, B = nil, custom = {}, points = {}, cool = {}, idx = 0, dirty = true, lastBuild = 0 }
 
 -- Категории действий. kw — слова для поиска ProximityPrompt (редактируются во вкладке «Правила»)
 local ActionKeys = { "order", "pickup", "load", "checkout", "help", "place", "decor", "upgrade", "hire", "collect", "reward", "price" }
@@ -306,8 +336,24 @@ local function firePrompt(prompt)
    return holdPrompt(prompt)
 end
 
+-- Физический клик по кнопке (для UI, который не реагирует на сигналы)
+local function physicalClick(btn)
+   return pcall(function()
+      local VIM = game:GetService("VirtualInputManager")
+      local inset = GuiService:GetGuiInset()
+      local pos = btn.AbsolutePosition + btn.AbsoluteSize / 2
+      local sg = btn:FindFirstAncestorWhichIsA("ScreenGui")
+      local y = pos.Y
+      if not (sg and sg.IgnoreGuiInset) then y = y + inset.Y end
+      VIM:SendMouseButtonEvent(pos.X, y, 0, true, game, 1)
+      task.wait(0.05)
+      VIM:SendMouseButtonEvent(pos.X, y, 0, false, game, 1)
+   end)
+end
+
 -- Клик по GUI-кнопке (у TextButton нет метода :Activate())
-local function clickGui(button)
+local function clickGui(button, preferPhysical)
+   if preferPhysical and physicalClick(button) then return true end
    if type(getconnections) == "function" then
       local fired = 0
       pcall(function()
@@ -321,19 +367,83 @@ local function clickGui(button)
       if fired > 0 then return true end
    end
    if type(firesignal) == "function" then
-      return pcall(firesignal, button.MouseButton1Click)
+      if pcall(firesignal, button.MouseButton1Click) then return true end
    end
-   return false
+   return physicalClick(button)
+end
+
+-- Индекс кнопок интерфейса (без повторных сканов PlayerGui — они лагали)
+local GuiIndex = { buttons = {} }
+
+local function guiAdd(o)
+   local c = o.ClassName
+   if c == "TextButton" or c == "ImageButton" then GuiIndex.buttons[o] = true end
+end
+
+task.spawn(function()
+   local n = 0
+   for _, o in ipairs(Player.PlayerGui:GetDescendants()) do
+      guiAdd(o)
+      n = n + 1
+      if n % 2500 == 0 then task.wait() end
+   end
+end)
+table.insert(Connections, Player.PlayerGui.DescendantAdded:Connect(guiAdd))
+table.insert(Connections, Player.PlayerGui.DescendantRemoving:Connect(function(o) GuiIndex.buttons[o] = nil end))
+
+local function isGuiVisible(obj)
+   local cur = obj
+   while cur and cur ~= game do
+      if cur:IsA("GuiObject") then
+         if not cur.Visible then return false end
+      elseif cur:IsA("LayerCollector") then
+         return cur.Enabled
+      end
+      cur = cur.Parent
+   end
+   return true
+end
+
+-- Текст кнопки: её Text, имя и любой вложенный TextLabel (для ImageButton)
+local function buttonLabel(btn)
+   local s = btn.Name
+   if btn.ClassName == "TextButton" then s = s .. " " .. btn.Text end
+   local lbl = btn:FindFirstChildWhichIsA("TextLabel", true)
+   if lbl then s = s .. " " .. lbl.Text end
+   return s:lower()
 end
 
 local function findButton(keywords)
-   for _, obj in ipairs(Player.PlayerGui:GetDescendants()) do
-      if obj:IsA("TextButton") and obj.Visible and not isOwnGui(obj) then
-         local txt = obj.Text:lower()
-         if not txt:find("robux", 1, true) and matchesAny(txt, keywords) then return obj end
+   for btn in pairs(GuiIndex.buttons) do
+      if btn.Parent and not isOwnGui(btn) and isGuiVisible(btn) then
+         local label = buttonLabel(btn)
+         if not label:find("robux", 1, true) and matchesAny(label, keywords) then return btn end
       end
    end
    return nil
+end
+
+-- Кнопка «Place» (появляется, когда несёшь дерево). Результат кэшируется на 0.35 сек.
+local lastPlaceBtn, lastPlaceCheck = nil, 0
+
+local function findPlaceButton(force)
+   local now = os.clock()
+   if not force and now - lastPlaceCheck < 0.35 then
+      if lastPlaceBtn == nil then return nil end
+      if lastPlaceBtn.Parent and isGuiVisible(lastPlaceBtn) then return lastPlaceBtn end
+   end
+   lastPlaceCheck = now
+   lastPlaceBtn = nil
+   for btn in pairs(GuiIndex.buttons) do
+      if btn.Parent and btn.AbsoluteSize.X > 0 and isGuiVisible(btn) and not isOwnGui(btn) then
+         local label = buttonLabel(btn)
+         if matchesAny(label, State.PlaceBtnKW) and not matchesAny(label, { "placeholder", "robux" }) then
+            lastPlaceBtn = btn
+            break
+         end
+      end
+   end
+   return lastPlaceBtn
 end
 
 -- =====================================================================
@@ -368,7 +478,7 @@ end
 local Window = Rayfield:CreateWindow({
    Name = "❄️ CheatHub | Winter Magic",
    LoadingTitle = "Снежная буря загружается...",
-   LoadingSubtitle = "v10",
+   LoadingSubtitle = "v11",
    Theme = Theme,
    ToggleUIKeybind = "K",
    DisableRayfieldPrompts = true,
@@ -775,6 +885,7 @@ end
 
 function Plot.set(root, method)
    Plot.root, Plot.method, Plot.center = root, method, nil
+   Zone.dirty = true
    if not root then return end
    local sum, n = Vector3.zero, 0
    for p in pairs(Index.prompts) do
@@ -958,7 +1069,7 @@ end
 local function promptText(p, withParent)
    local s = p.ActionText .. " " .. p.ObjectText .. " " .. p.Name
    if withParent and p.Parent then s = s .. " " .. p.Parent.Name end
-   return s:lower()
+   return normalizeText(s)
 end
 
 local function classify(p)
@@ -969,7 +1080,7 @@ local function classify(p)
    if not matchesAny(promptText(p, false), GlobalExclude) then
       local text = promptText(p, true)
       for _, key in ipairs(CatOrder) do
-         if matchesAny(text, CatKW[key]) then
+         if matchesStart(text, CatKW[key]) then
             v = key
             break
          end
@@ -1012,6 +1123,8 @@ local function firePromptSmart(p)
    return ok
 end
 
+local pickHist = setmetatable({}, { __mode = "k" })
+
 -- Выполнить до maxN промптов категории. Возвращает (успех, сколько_нажато)
 local function promptTask(cat, maxN, cooldown)
    local did, fired = false, 0
@@ -1022,6 +1135,18 @@ local function promptTask(cat, maxN, cooldown)
          if firePromptSmart(c.p) then
             did = true
             markSuccess()
+            if cat == "pickup" then
+               local now = os.clock()
+               State.JustPicked = now
+               State.CarryUntil = now + 180
+               local h = pickHist[c.p]
+               if not h or now - h.t0 > 60 then
+                  h = { n = 0, t0 = now }
+                  pickHist[c.p] = h
+               end
+               h.n = h.n + 1
+               if h.n > 4 then lastFired[c.p] = now + 120 end -- один и тот же объект берём слишком часто — пауза
+            end
          end
          fired = fired + 1
          task.wait(0.12)
@@ -1060,7 +1185,9 @@ local function serveStep()
    local budget = State.MaxPerTick
    for _, cat in ipairs({ "load", "checkout", "help", "pickup" }) do
       if budget <= 0 then break end
-      if not (cat == "pickup" and isCarrying()) then
+      -- не берём новое дерево, пока несём прошлое или ждём кнопку Place
+      local skip = cat == "pickup" and (isCarrying() or findPlaceButton() ~= nil or os.clock() - State.JustPicked < 2.5)
+      if not skip then
          if tryBound(cat) then
             budget = budget - 1
          else
@@ -1129,7 +1256,202 @@ local function due(key, interval)
    return false
 end
 
+-- =====================================================================
+-- 8b. РАССТАНОВКА ДЕРЕВЬЕВ: взять → телепорт по зоне → нажать Place
+-- =====================================================================
+local function markZoneDirty()
+   Zone.dirty = true
+   Zone.lastBuild = 0
+end
+
+local function jumpTo(pos)
+   local hrp = getHRP()
+   if not hrp then return false end
+   hrp.CFrame = CFrame.new(pos)
+   hrp.AssemblyLinearVelocity = Vector3.zero
+   return true
+end
+
+local function groundAt(x, y, z)
+   local params = RaycastParams.new()
+   params.FilterType = Enum.RaycastFilterType.Exclude
+   params.FilterDescendantsInstances = { Player.Character }
+   local res = WS:Raycast(Vector3.new(x, y + 60, z), Vector3.new(0, -140, 0), params)
+   return res and res.Position or nil
+end
+
+-- Строим сетку точек «змейкой»: так деревья встают ровными рядами
+local function buildZone()
+   Zone.dirty = false
+   Zone.lastBuild = os.clock()
+   Zone.points, Zone.cool, Zone.idx = {}, {}, 0
+   local pts = Zone.points
+   local s = math.max(State.ZoneSpacing, 3)
+
+   local function addRectWorld(minX, maxX, minZ, maxZ, y)
+      local row, z = 0, minZ
+      while z <= maxZ and #pts < 400 do
+         local xs, xe, step = minX, maxX, s
+         if row % 2 == 1 then xs, xe, step = maxX, minX, -s end
+         local x = xs
+         while ((step > 0 and x <= xe) or (step < 0 and x >= xe)) and #pts < 400 do
+            local g = groundAt(x, y, z)
+            if g then pts[#pts + 1] = g + Vector3.new(0, 3, 0) end
+            x = x + step
+         end
+         z = z + s
+         row = row + 1
+      end
+   end
+
+   local function addRectPart(part)
+      local sx, sz = part.Size.X, part.Size.Z
+      local margin = math.min(4, sx / 4, sz / 4)
+      local row, z = 0, -sz / 2 + margin
+      while z <= sz / 2 - margin and #pts < 400 do
+         local xs, xe, step = -sx / 2 + margin, sx / 2 - margin, s
+         if row % 2 == 1 then xs, xe, step = xe, xs, -s end
+         local x = xs
+         while ((step > 0 and x <= xe) or (step < 0 and x >= xe)) and #pts < 400 do
+            pts[#pts + 1] = (part.CFrame * CFrame.new(x, part.Size.Y / 2 + 3, z)).Position
+            x = x + step
+         end
+         z = z + s
+         row = row + 1
+      end
+   end
+
+   if State.ZoneMode == "custom" then
+      for _, p in ipairs(Zone.custom) do pts[#pts + 1] = p end
+   elseif State.ZoneMode == "zone" and Zone.A and Zone.B then
+      addRectWorld(
+         math.min(Zone.A.X, Zone.B.X), math.max(Zone.A.X, Zone.B.X),
+         math.min(Zone.A.Z, Zone.B.Z), math.max(Zone.A.Z, Zone.B.Z),
+         (Zone.A.Y + Zone.B.Y) / 2
+      )
+   else
+      -- авто: большие детали с «зонными» именами внутри моего участка, иначе рамка по моим промптам
+      local rects = {}
+      if Plot.root and Plot.root.Parent then
+         local n = 0
+         for _, o in ipairs(Plot.root:GetDescendants()) do
+            n = n + 1
+            if n % 3000 == 0 then task.wait() end
+            if o:IsA("BasePart") and o.Size.X >= 12 and o.Size.Z >= 12 and matchesAny(o.Name:lower(), State.ZoneKW) then
+               rects[#rects + 1] = o
+            end
+         end
+      end
+      if #rects > 0 then
+         table.sort(rects, function(a, b) return a.Size.X * a.Size.Z > b.Size.X * b.Size.Z end)
+         for i = 1, math.min(#rects, 3) do addRectPart(rects[i]) end
+      else
+         local minX, maxX, minZ, maxZ, ySum, n = math.huge, -math.huge, math.huge, -math.huge, 0, 0
+         for p in pairs(Index.prompts) do
+            if p.Parent and isMine(p) then
+               local pos = instPosition(p)
+               if pos then
+                  minX, maxX = math.min(minX, pos.X), math.max(maxX, pos.X)
+                  minZ, maxZ = math.min(minZ, pos.Z), math.max(maxZ, pos.Z)
+                  ySum = ySum + pos.Y
+                  n = n + 1
+               end
+            end
+         end
+         if n > 0 then addRectWorld(minX - 10, maxX + 10, minZ - 10, maxZ + 10, ySum / n) end
+      end
+   end
+   return #pts
+end
+
+-- Следующая свободная точка (занятые и «плохие» отдыхают какое-то время)
+local function nextSpot()
+   if (Zone.dirty or #Zone.points == 0) and os.clock() - Zone.lastBuild > 5 then buildZone() end
+   local n = #Zone.points
+   if n == 0 then return nil end
+   local now = os.clock()
+   for i = 0, n - 1 do
+      local idx = ((Zone.idx + i) % n) + 1
+      if (Zone.cool[idx] or 0) <= now then return idx, Zone.points[idx] end
+   end
+   return nil
+end
+
+local function previewZone()
+   if Zone.dirty or #Zone.points == 0 then buildZone() end
+   local folder = Instance.new("Folder")
+   folder.Name = "CheatHubZonePreview"
+   for _, p in ipairs(Zone.points) do
+      local part = Instance.new("Part")
+      part.Anchored = true
+      part.CanCollide = false
+      part.CanQuery = false
+      part.CanTouch = false
+      part.Shape = Enum.PartType.Ball
+      part.Size = Vector3.new(1.2, 1.2, 1.2)
+      part.Position = p - Vector3.new(0, 2.5, 0)
+      part.Color = GREEN
+      part.Material = Enum.Material.Neon
+      part.Parent = folder
+   end
+   folder.Parent = WS
+   task.delay(5, function() folder:Destroy() end)
+   return #Zone.points
+end
+
+-- Несём дерево: прыгаем по точкам зоны и жмём Place, пока дерево не поставится
+local function placeCarried()
+   State.Status = "Расстановка деревьев"
+   local tries = 0
+   while State.Running and tries < State.MaxPlaceTries do
+      if not findPlaceButton(true) then return true end
+      local idx, spot = nextSpot()
+      if not spot then
+         notify("⚠️ Нет точек для расстановки", "Задай зону: «Автофарм» → «Расстановка» → углы A и B.", 8, "zone_empty", 30)
+         break
+      end
+      jumpTo(spot)
+      task.wait(State.PlaceSettle)
+      local btn = findPlaceButton(true)
+      if not btn then return true end
+      clickGui(btn, tries % 2 == 1) -- нечётные попытки — физический клик
+      task.wait(0.5)
+      Zone.idx = idx
+      if not findPlaceButton(true) then
+         Zone.cool[idx] = os.clock() + 120
+         State.PlacedCount = State.PlacedCount + 1
+         State.CarryUntil = 0
+         markSuccess()
+         return true
+      end
+      Zone.cool[idx] = os.clock() + 25
+      tries = tries + 1
+   end
+   State.PlaceFailUntil = os.clock() + 8
+   notify("⚠️ Не удалось поставить дерево", ("Попыток: %d. Проверь кнопку Place и зону расстановки."):format(tries), 8, "place_fail", 20)
+   return false
+end
+
+local function handleCarrying()
+   if not State.AutoPlace or os.clock() < State.PlaceFailUntil then return false end
+   if not (isCarrying() or os.clock() < State.CarryUntil) then return false end
+   if not findPlaceButton() then return false end
+   placeCarried()
+   return true
+end
+
 local function farmStep()
+   -- Несём дерево и есть кнопка Place — сначала ставим (если только клиенту не нужна погрузка)
+   local now = os.clock()
+   local loadReady = State.AutoServe and #candidates("load", true) > 0
+   if loadReady then
+      State.LoadSince = State.LoadSince or now
+      -- промпт погрузки горит дольше 8 сек — не даём ему блокировать расстановку
+      if now - State.LoadSince > 8 then loadReady = false end
+   else
+      State.LoadSince = nil
+   end
+   if not loadReady and handleCarrying() then return end
    if State.AutoServe and due("serve", State.CycleDelay) then serveStep() end
    if State.AutoPlace and due("place", 2.5) then placeStep() end
    if State.AutoOrder and due("order", State.OrderInterval) then orderStep() end
@@ -1746,7 +2068,7 @@ end
 -- =====================================================================
 -- 13. UI
 -- =====================================================================
-local L_Plot, L_Status, L_Cash, L_Income, L_Rep, L_Actions, L_Time
+local L_Plot, L_Status, L_Cash, L_Income, L_Rep, L_Actions, L_Time, L_Zone
 local DecorLabel
 local BindInputs = {}
 local SpyToggle
@@ -1898,6 +2220,137 @@ FarmTab:CreateSlider({
    Name = "Радиус участка (для покупателей вне участка)",
    Range = { 60, 400 }, Increment = 10, Suffix = " studs", CurrentValue = 160, Flag = "PlotRadius",
    Callback = function(v) State.PlotRadius = v end,
+})
+
+FarmTab:CreateSection("Расстановка деревьев (взять → телепорт по зоне → Place)")
+local ZoneLabels = { "Авто (по участку)", "Моя зона (углы A/B)", "Мои точки" }
+local ZoneKeys = { ["Авто (по участку)"] = "auto", ["Моя зона (углы A/B)"] = "zone", ["Мои точки"] = "custom" }
+L_Zone = FarmTab:CreateLabel("🧭 Зона: авто")
+local ZoneDropdown = FarmTab:CreateDropdown({
+   Name = "Где ставить деревья",
+   Options = ZoneLabels,
+   CurrentOption = { "Авто (по участку)" },
+   MultipleOptions = false,
+   Flag = "ZoneMode",
+   Callback = function(opt)
+      local label = (type(opt) == "table" and opt[1]) or opt
+      State.ZoneMode = ZoneKeys[label] or "auto"
+      markZoneDirty()
+   end,
+})
+FarmTab:CreateButton({
+   Name = "📍 Угол A (встань в угол зоны)",
+   Callback = function()
+      local hrp = getHRP()
+      if hrp then
+         Zone.A = hrp.Position
+         markZoneDirty()
+         notify("Угол A задан", "Теперь встань в противоположный угол и нажми «Угол B».", 5, "zone")
+      end
+   end,
+})
+FarmTab:CreateButton({
+   Name = "📍 Угол B (противоположный угол)",
+   Callback = function()
+      local hrp = getHRP()
+      if hrp then
+         Zone.B = hrp.Position
+         markZoneDirty()
+         if Zone.A then
+            ZoneDropdown:Set({ "Моя зона (углы A/B)" })
+            notify("✅ Зона задана", "Нажми «Показать точки», чтобы проверить сетку.", 5, "zone")
+         else
+            notify("Угол B задан", "Не забудь задать и «Угол A».", 5, "zone")
+         end
+      end
+   end,
+})
+FarmTab:CreateButton({
+   Name = "➕ Добавить точку (встань на место дерева)",
+   Callback = function()
+      local hrp = getHRP()
+      if hrp then
+         Zone.custom[#Zone.custom + 1] = hrp.Position
+         markZoneDirty()
+         ZoneDropdown:Set({ "Мои точки" })
+         notify("Точка добавлена", ("Всего точек: %d"):format(#Zone.custom), 3, "zone")
+      end
+   end,
+})
+FarmTab:CreateButton({
+   Name = "🧹 Сбросить углы и точки",
+   Callback = function()
+      Zone.A, Zone.B, Zone.custom = nil, nil, {}
+      markZoneDirty()
+      ZoneDropdown:Set({ "Авто (по участку)" })
+      notify("Готово", "Зона сброшена, включён авто-режим.", 3, "zone")
+   end,
+})
+FarmTab:CreateSlider({
+   Name = "Шаг сетки (расстояние между деревьями)",
+   Range = { 4, 20 }, Increment = 1, Suffix = " studs", CurrentValue = 8, Flag = "ZoneSpacing",
+   Callback = function(v)
+      State.ZoneSpacing = v
+      markZoneDirty()
+   end,
+})
+FarmTab:CreateSlider({
+   Name = "Попыток поставить одно дерево",
+   Range = { 2, 20 }, Increment = 1, Suffix = "", CurrentValue = 8, Flag = "MaxPlaceTries",
+   Callback = function(v) State.MaxPlaceTries = v end,
+})
+FarmTab:CreateSlider({
+   Name = "Пауза перед нажатием Place",
+   Range = { 0.1, 1.5 }, Increment = 0.1, Suffix = " сек", CurrentValue = 0.3, Flag = "PlaceSettle",
+   Callback = function(v) State.PlaceSettle = v end,
+})
+FarmTab:CreateInput({
+   Name = "Слова кнопки Place",
+   CurrentValue = "place, put down, set down",
+   PlaceholderText = "через запятую",
+   RemoveTextAfterFocusLost = false,
+   Flag = "PlaceBtnKW",
+   Callback = function(text)
+      State.PlaceBtnKW = parseKeywords(text)
+      lastPlaceCheck = 0
+   end,
+})
+FarmTab:CreateInput({
+   Name = "Слова зоны (для авто-режима)",
+   CurrentValue = "zone, placement, grid, lot area, ground, floor",
+   PlaceholderText = "через запятую",
+   RemoveTextAfterFocusLost = false,
+   Flag = "ZoneKW",
+   Callback = function(text)
+      State.ZoneKW = parseKeywords(text)
+      markZoneDirty()
+   end,
+})
+FarmTab:CreateButton({
+   Name = "👁️ Показать точки расстановки (5 сек)",
+   Callback = function()
+      task.spawn(function()
+         local n = previewZone()
+         if n > 0 then
+            notify("Точки показаны", ("Всего точек: %d (зелёные шарики на земле)"):format(n), 5, "zone")
+         else
+            notify("Точек нет", "Задай углы A и B или добавь точки вручную.", 6, "zone")
+         end
+      end)
+   end,
+})
+FarmTab:CreateButton({
+   Name = "🌲 Поставить дерево один раз (тест)",
+   Callback = function()
+      task.spawn(function()
+         if findPlaceButton(true) then
+            local ok = placeCarried()
+            notify(ok and "✅ Поставлено" or "❌ Не вышло", ok and "Дерево на месте." or "Проверь зону и кнопку Place.", 5, "place_once")
+         else
+            notify("Нет кнопки Place", "Возьми дерево в руки и повтори.", 6, "place_once")
+         end
+      end)
+   end,
 })
 
 FarmTab:CreateSection("Авто-цена")
@@ -2434,6 +2887,17 @@ local function updateUI()
    L_Actions:Set(("⚡ Действий: %d (%.1f/мин)"):format(State.TotalActions, apm))
    L_Time:Set("⏱️ Сессия: " .. fmtTime(now - State.SessionStart))
    DecorLabel:Set("Действий с декором: " .. State.DecorActions)
+   do
+      local modeTxt
+      if State.ZoneMode == "zone" then
+         modeTxt = (Zone.A and Zone.B) and "своя зона" or "задай углы A и B"
+      elseif State.ZoneMode == "custom" then
+         modeTxt = ("мои точки: %d"):format(#Zone.custom)
+      else
+         modeTxt = "авто"
+      end
+      L_Zone:Set(("🧭 Зона: %s | точек: %d | поставлено: %d"):format(modeTxt, #Zone.points, State.PlacedCount))
+   end
 
    HUD.Update(
       "● " .. State.Status,
@@ -2604,4 +3068,4 @@ env.CheatHubWinter = { Unload = Unload }
 
 Rayfield:LoadConfiguration()
 playSound("9118823103")
-notify("❄️ Winter Magic", "CheatHub v10 загружен! Меню: клавиша K, автофарм: F6.", 6, "loaded")
+notify("❄️ Winter Magic", "CheatHub v11 загружен! Меню: клавиша K, автофарм: F6.", 6, "loaded")
