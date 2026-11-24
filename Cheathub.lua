@@ -1,4 +1,4 @@
--- CheatHub v11 — Winter Magic Edition
+-- CheatHub v12 — Winter Magic Edition
 -- Run a Christmas Tree Lot
 -- by dj
 
@@ -31,28 +31,39 @@ end
 -- =====================================================================
 -- 1. SERVICES & UTILS
 -- =====================================================================
-local Players = game:GetService("Players")
-local RS = game:GetService("ReplicatedStorage")
-local WS = game:GetService("Workspace")
-local TweenService = game:GetService("TweenService")
+local Players, RS, WS, TweenService, VirtualUser, UserInputService, RunService, TeleportService, HttpService, Lighting, PPS, GuiService, Player, PlayerGui, Connections, ErrorLog, logError, playSound, fmtNum, fmtTime, cut, new, makeScreenGui, getHRP, getHumanoid, resolvePath, isOwnGui, parseKeywords, matchesAny, matchesStart, normalizeText, cached, invalidateCache
+do
+Players = game:GetService("Players")
+RS = game:GetService("ReplicatedStorage")
+WS = game:GetService("Workspace")
+TweenService = game:GetService("TweenService")
 local SoundService = game:GetService("SoundService")
-local VirtualUser = game:GetService("VirtualUser")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
-local Lighting = game:GetService("Lighting")
-local PPS = game:GetService("ProximityPromptService")
-local GuiService = game:GetService("GuiService")
-local Player = Players.LocalPlayer
+VirtualUser = game:GetService("VirtualUser")
+UserInputService = game:GetService("UserInputService")
+RunService = game:GetService("RunService")
+TeleportService = game:GetService("TeleportService")
+HttpService = game:GetService("HttpService")
+Lighting = game:GetService("Lighting")
+PPS = game:GetService("ProximityPromptService")
+GuiService = game:GetService("GuiService")
+Player = Players.LocalPlayer
+PlayerGui = Player:WaitForChild("PlayerGui")
 
-local Connections = {}
+Connections = {}
 
 local function dbg(...)
    if CONFIG.Debug then print("[CheatHub]", ...) end
 end
 
-local function playSound(id)
+-- Журнал ошибок: попадает в отчёт для разработчика
+ErrorLog = {}
+function logError(where, err)
+   ErrorLog[#ErrorLog + 1] = { t = os.clock(), where = tostring(where), msg = tostring(err):sub(1, 300) }
+   if #ErrorLog > 30 then table.remove(ErrorLog, 1) end
+   dbg("ОШИБКА", where, err)
+end
+
+function playSound(id)
    pcall(function()
       local s = Instance.new("Sound")
       s.SoundId = "rbxassetid://" .. id
@@ -63,7 +74,7 @@ local function playSound(id)
    end)
 end
 
-local function fmtNum(n)
+function fmtNum(n)
    n = tonumber(n)
    if not n then return "—" end
    local a = math.abs(n)
@@ -74,19 +85,32 @@ local function fmtNum(n)
    return tostring(math.floor(n))
 end
 
-local function fmtTime(sec)
+function fmtTime(sec)
    sec = math.max(0, math.floor(sec))
    return ("%02d:%02d:%02d"):format(math.floor(sec / 3600), math.floor(sec / 60) % 60, sec % 60)
 end
 
-local function new(class, props, parent)
+-- Обрезка по символам (не по байтам), чтобы не ломать русские буквы и эмодзи
+function cut(s, n)
+   s = tostring(s)
+   if type(utf8) == "table" and utf8.offset then
+      local ok, pos = pcall(utf8.offset, s, n + 1)
+      if ok then
+         if pos and pos <= #s then return s:sub(1, pos - 1) .. "…" end
+         return s
+      end
+   end
+   return s:sub(1, n)
+end
+
+function new(class, props, parent)
    local o = Instance.new(class)
    for k, v in pairs(props) do o[k] = v end
    if parent then o.Parent = parent end
    return o
 end
 
-local function makeScreenGui(name, order)
+function makeScreenGui(name, order)
    local gui = Instance.new("ScreenGui")
    gui.Name = name
    gui.ResetOnSpawn = false
@@ -106,17 +130,17 @@ local function makeScreenGui(name, order)
    return gui
 end
 
-local function getHRP()
+function getHRP()
    local c = Player.Character
    return c and c:FindFirstChild("HumanoidRootPart")
 end
 
-local function getHumanoid()
+function getHumanoid()
    local c = Player.Character
    return c and c:FindFirstChildOfClass("Humanoid")
 end
 
-local function resolvePath(path)
+function resolvePath(path)
    local cur = game
    for part in tostring(path):gmatch("[^%.]+") do
       cur = cur and cur:FindFirstChild(part)
@@ -125,13 +149,13 @@ local function resolvePath(path)
    return cur
 end
 
-local function isOwnGui(obj)
+function isOwnGui(obj)
    local sg = obj:FindFirstAncestorWhichIsA("ScreenGui")
    return sg ~= nil and (sg.Name == "Rayfield" or sg.Name:sub(1, 8) == "CheatHub")
 end
 
 -- Ключевые слова через запятую (фразы с пробелами допустимы)
-local function parseKeywords(text)
+function parseKeywords(text)
    local list = {}
    for w in tostring(text or ""):gmatch("[^,]+") do
       local s = w:match("^%s*(.-)%s*$"):lower()
@@ -140,7 +164,7 @@ local function parseKeywords(text)
    return list
 end
 
-local function matchesAny(text, kws)
+function matchesAny(text, kws)
    for _, kw in ipairs(kws) do
       if text:find(kw, 1, true) then return true end
    end
@@ -148,7 +172,7 @@ local function matchesAny(text, kws)
 end
 
 -- Совпадение по началу слова: «load» найдёт «Load Tree», но не «Unload»
-local function matchesStart(text, kws)
+function matchesStart(text, kws)
    for _, kw in ipairs(kws) do
       local init = 1
       while true do
@@ -163,14 +187,14 @@ local function matchesStart(text, kws)
 end
 
 -- «TreeRack_01» → «tree rack 01»
-local function normalizeText(s)
+function normalizeText(s)
    s = s:gsub("(%l)(%u)", "%1 %2"):gsub("[_%-]+", " ")
    return s:lower()
 end
 
 -- Кэш для редких поисков (статы и т.п.)
 local Cache = {}
-local function cached(key, finder, ttl)
+function cached(key, finder, ttl)
    local e = Cache[key]
    if e and (os.clock() - e.t) < (ttl or CONFIG.CacheTTL) then
       local v = e.v
@@ -181,8 +205,10 @@ local function cached(key, finder, ttl)
    return v
 end
 
-local function invalidateCache()
+function invalidateCache()
    Cache = {}
+end
+
 end
 
 -- =====================================================================
@@ -265,23 +291,29 @@ local State = {
    ZoneMode = "auto", ZoneSpacing = 8, MaxPlaceTries = 8, PlaceSettle = 0.3,
    ZoneKW = { "zone", "placement", "grid", "lot area", "ground", "floor" },
    JustPicked = 0, CarryUntil = 0, PlaceFailUntil = 0, PlacedCount = 0,
+   -- v12
+   Fps = 60, LagGuard = true, LagFactor = 1,
+   StopAfterMin = 0, WorkMin = 0, RestMin = 0, ResumeAt = nil, TimerPause = false,
+   FarmSeconds = 0, GainedTotal = 0, PriceChanges = 0,
+   AutoCodes = false, Redeemed = {}, Tried = {}, AutoClaimUI = false, ClaimKW = { "claim", "collect" }, Placing = false,
 }
 
 -- Цена: текущая и базовая (узнаются из привязки «Цена»)
 local Price = { value = nil, base = nil }
 
 -- Зона расстановки деревьев: углы A/B, свои точки и сетка точек
-local Zone = { A = nil, B = nil, custom = {}, points = {}, cool = {}, idx = 0, dirty = true, lastBuild = 0 }
+local Zone = { A = nil, B = nil, custom = {}, points = {}, cool = {}, idx = 0, dirty = true, lastBuild = -1e9 }
 
 -- Категории действий. kw — слова для поиска ProximityPrompt (редактируются во вкладке «Правила»)
-local ActionKeys = { "order", "pickup", "load", "checkout", "help", "place", "decor", "upgrade", "hire", "collect", "reward", "price" }
+local ActionKeys = { "order", "pickup", "load", "checkout", "help", "place", "unload", "decor", "upgrade", "hire", "collect", "reward", "price" }
 local Actions = {
-   order = { label = "Заказ деревьев", kw = "order, supply, truck, delivery, catalog, computer, lot manager, wholesale, restock" },
+   order = { label = "Заказ деревьев", kw = "order, supply truck, supply, catalog, computer, lot manager, wholesale, restock" },
    pickup = { label = "Взять дерево", kw = "pick up, pickup, pick, grab, take, carry" },
    load = { label = "Погрузка в машину", kw = "load, trunk, roof, vehicle, deliver, hand over" },
    checkout = { label = "Касса / оплата", kw = "checkout, check out, cashier, register, ring up, pay, till" },
    help = { label = "Помощь покупателю", kw = "help, serve, assist, greet, customer, shopper" },
-   place = { label = "Расстановка деревьев", kw = "place, stock, unpack, unwrap, rack, shelf, display, crate, plant" },
+   place = { label = "Расстановка деревьев", kw = "place, stock, rack, shelf, display, plant" },
+   unload = { label = "Разгрузка / распаковка", kw = "unload, unpack, unwrap, receive, open crate" },
    decor = { label = "Декор", kw = "decor, ornament, wreath, garland, tinsel, lights" },
    upgrade = { label = "Апгрейд HQ / расширение", kw = "upgrade, hq, headquarter, expand, expansion, unlock, extend, enlarge" },
    hire = { label = "Найм работников", kw = "hire" },
@@ -290,7 +322,7 @@ local Actions = {
    price = { label = "Цена (только через привязку)", kw = "", noPrompt = true },
 }
 -- Порядок классификации промптов (первое совпадение побеждает)
-local CatOrder = { "hire", "upgrade", "order", "reward", "load", "pickup", "checkout", "help", "place", "decor", "collect" }
+local CatOrder = { "hire", "upgrade", "unload", "order", "reward", "load", "pickup", "checkout", "help", "place", "decor", "collect" }
 local GlobalExclude = { "robux", "gamepass", "game pass", "premium", "vip", "claim plot", "teleport", "bench", "seat", "chair", "sit down", "settings" }
 
 local ActionLabels, LabelToKey, CatKW = {}, {}, {}
@@ -306,19 +338,28 @@ for _, k in ipairs(ActionKeys) do Binds[k] = { remote = "", args = "" } end
 
 -- Промокоды (регистр важен!). Часть могла устареть.
 local ActiveCodes = {
-   "CHRISTMAS", "SANTA250", "KRAMPUS!", "OGTICKET", "BLITZ", "MISTLETOE", "SNOWBALL",
-   "HOHOHO", "IMBROKE", "BUDDYTHEELF", "JINGLEBELLS", "NICELIST", "YETI",
+   "SCROOGE", "CAROL", "YETI", "BLITZ", "NICELIST", "JINGLEBELLS", "BUDDYTHEELF", "IMBROKE",
+   "HOHOHO", "SNOWBALL", "MISTLETOE", "OGTICKET",
 }
 
 -- =====================================================================
 -- 3. EXECUTOR COMPATIBILITY
 -- =====================================================================
-local Executor = { Name = "Unknown", IsXeno = false }
+local Executor, clipFn, clip, firePrompt, clickGui, GuiIndex, isGuiVisible, buttonLabel, findButton, lastPlaceBtn, lastPlaceCheck, findPlaceButton
+do
+Executor = { Name = "Unknown", IsXeno = false }
 if type(identifyexecutor) == "function" then
    local ok, n = pcall(identifyexecutor)
    if ok and n then Executor.Name = tostring(n) end
 end
 Executor.IsXeno = Executor.Name:lower():find("xeno", 1, true) ~= nil
+
+-- у разных executor буфер обмена называется по-разному
+clipFn = setclipboard or toclipboard or set_clipboard
+function clip(text)
+   if type(clipFn) ~= "function" then return false end
+   return (pcall(clipFn, text))
+end
 
 local function holdPrompt(prompt)
    return pcall(function()
@@ -328,7 +369,7 @@ local function holdPrompt(prompt)
    end)
 end
 
-local function firePrompt(prompt)
+function firePrompt(prompt)
    if not prompt or not prompt.Enabled then return false end
    if type(fireproximityprompt) == "function" and not Executor.IsXeno then
       if pcall(fireproximityprompt, prompt) then return true end
@@ -352,7 +393,7 @@ local function physicalClick(btn)
 end
 
 -- Клик по GUI-кнопке (у TextButton нет метода :Activate())
-local function clickGui(button, preferPhysical)
+function clickGui(button, preferPhysical)
    if preferPhysical and physicalClick(button) then return true end
    if type(getconnections) == "function" then
       local fired = 0
@@ -373,25 +414,32 @@ local function clickGui(button, preferPhysical)
 end
 
 -- Индекс кнопок интерфейса (без повторных сканов PlayerGui — они лагали)
-local GuiIndex = { buttons = {} }
+GuiIndex = { buttons = {}, boxes = {} }
 
 local function guiAdd(o)
    local c = o.ClassName
-   if c == "TextButton" or c == "ImageButton" then GuiIndex.buttons[o] = true end
+   if c == "TextButton" or c == "ImageButton" then
+      GuiIndex.buttons[o] = true
+   elseif c == "TextBox" then
+      GuiIndex.boxes[o] = true
+   end
 end
 
 task.spawn(function()
    local n = 0
-   for _, o in ipairs(Player.PlayerGui:GetDescendants()) do
+   for _, o in ipairs(PlayerGui:GetDescendants()) do
       guiAdd(o)
       n = n + 1
       if n % 2500 == 0 then task.wait() end
    end
 end)
-table.insert(Connections, Player.PlayerGui.DescendantAdded:Connect(guiAdd))
-table.insert(Connections, Player.PlayerGui.DescendantRemoving:Connect(function(o) GuiIndex.buttons[o] = nil end))
+table.insert(Connections, PlayerGui.DescendantAdded:Connect(guiAdd))
+table.insert(Connections, PlayerGui.DescendantRemoving:Connect(function(o)
+   GuiIndex.buttons[o] = nil
+   GuiIndex.boxes[o] = nil
+end))
 
-local function isGuiVisible(obj)
+function isGuiVisible(obj)
    local cur = obj
    while cur and cur ~= game do
       if cur:IsA("GuiObject") then
@@ -405,7 +453,7 @@ local function isGuiVisible(obj)
 end
 
 -- Текст кнопки: её Text, имя и любой вложенный TextLabel (для ImageButton)
-local function buttonLabel(btn)
+function buttonLabel(btn)
    local s = btn.Name
    if btn.ClassName == "TextButton" then s = s .. " " .. btn.Text end
    local lbl = btn:FindFirstChildWhichIsA("TextLabel", true)
@@ -413,7 +461,7 @@ local function buttonLabel(btn)
    return s:lower()
 end
 
-local function findButton(keywords)
+function findButton(keywords)
    for btn in pairs(GuiIndex.buttons) do
       if btn.Parent and not isOwnGui(btn) and isGuiVisible(btn) then
          local label = buttonLabel(btn)
@@ -424,9 +472,9 @@ local function findButton(keywords)
 end
 
 -- Кнопка «Place» (появляется, когда несёшь дерево). Результат кэшируется на 0.35 сек.
-local lastPlaceBtn, lastPlaceCheck = nil, 0
+lastPlaceBtn, lastPlaceCheck = nil, -1e9
 
-local function findPlaceButton(force)
+function findPlaceButton(force)
    local now = os.clock()
    if not force and now - lastPlaceCheck < 0.35 then
       if lastPlaceBtn == nil then return nil end
@@ -446,19 +494,26 @@ local function findPlaceButton(force)
    return lastPlaceBtn
 end
 
+end
+
 -- =====================================================================
 -- 4. RAYFIELD, NOTIFY, WINDOW
 -- =====================================================================
-local okLoad, Rayfield = pcall(function()
-   return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-end)
+local okLoad, Rayfield, notify, copyLink, Window
+do
+for _, url in ipairs({ "https://sirius.menu/rayfield", "https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua" }) do
+   okLoad, Rayfield = pcall(function()
+      return loadstring(game:HttpGet(url))()
+   end)
+   if okLoad and Rayfield then break end
+end
 if not okLoad or not Rayfield then
    warn("[CheatHub] Rayfield не загрузился: " .. tostring(Rayfield))
    return
 end
 
 local lastNotify = {}
-local function notify(title, content, duration, key, cooldown)
+function notify(title, content, duration, key, cooldown)
    key = key or title
    local now = os.clock()
    if lastNotify[key] and now - lastNotify[key] < (cooldown or 2) then return end
@@ -468,17 +523,16 @@ local function notify(title, content, duration, key, cooldown)
    end)
 end
 
-local function copyLink()
-   if type(setclipboard) ~= "function" then return false end
-   local ok = pcall(setclipboard, CONFIG.TelegramUrl)
+function copyLink()
+   local ok = clip(CONFIG.TelegramUrl)
    playSound("6895079853")
    return ok
 end
 
-local Window = Rayfield:CreateWindow({
+Window = Rayfield:CreateWindow({
    Name = "❄️ CheatHub | Winter Magic",
    LoadingTitle = "Снежная буря загружается...",
-   LoadingSubtitle = "v11",
+   LoadingSubtitle = "v12",
    Theme = Theme,
    ToggleUIKeybind = "K",
    DisableRayfieldPrompts = true,
@@ -487,9 +541,37 @@ local Window = Rayfield:CreateWindow({
    KeySystem = false,
 })
 
+-- Ошибки в обработчиках кнопок не должны пропадать: оборачиваем Callback в pcall + журнал
+local origCreateTab = Window.CreateTab
+if type(origCreateTab) == "function" then
+Window.CreateTab = function(self, ...)
+   local tab = origCreateTab(self, ...)
+   for _, fnName in ipairs({ "CreateButton", "CreateToggle", "CreateSlider", "CreateDropdown", "CreateInput", "CreateKeybind" }) do
+      local orig = tab[fnName]
+      if orig then
+         tab[fnName] = function(t, settings)
+            if type(settings) == "table" and type(settings.Callback) == "function" then
+               local cb, label = settings.Callback, tostring(settings.Name or fnName)
+               settings.Callback = function(...)
+                  local ok, err = pcall(cb, ...)
+                  if not ok then logError("UI " .. label, err) end
+               end
+            end
+            return orig(t, settings)
+         end
+      end
+   end
+   return tab
+end
+end
+
+end
+
 -- =====================================================================
 -- 5. АРГУМЕНТЫ REMOTE, ИНДЕКСЫ (без тяжёлых сканов), ПРОСЛУШКА СЕРВЕРА
 -- =====================================================================
+local parseBinding, parseArgs, summarizeArg, Reviews, Listen, Index, findRemote, callRemote, refreshListen
+do
 local function decodeValue(v, ctx)
    local t = type(v)
    if t == "string" then
@@ -508,7 +590,7 @@ local function decodeValue(v, ctx)
    return v
 end
 
-local function parseBinding(text)
+function parseBinding(text)
    text = tostring(text or "")
    local remote, args = text:match("^%s*([^|]-)%s*|%s*(.-)%s*$")
    if not remote then
@@ -519,7 +601,7 @@ local function parseBinding(text)
 end
 
 -- Аргументы: "Pine, 1, true, {tree}, {price}" или JSON-массив: [{"Pine":5}, "{price}"]
-local function parseArgs(text, ctx)
+function parseArgs(text, ctx)
    local out = { n = 0 }
    text = tostring(text or "")
    if text:match("^%s*$") then return out end
@@ -555,11 +637,11 @@ local function parseArgs(text, ctx)
    return out
 end
 
-local function summarizeArg(v, depth)
+function summarizeArg(v, depth)
    depth = depth or 0
    local t = typeof(v)
    if t == "string" then
-      return v:sub(1, 80)
+      return cut(v, 80)
    elseif t == "number" or t == "boolean" then
       return tostring(v)
    elseif t == "Instance" then
@@ -588,8 +670,8 @@ local function collectStrings(v, out, depth)
    end
 end
 
-local Reviews = { log = {}, seen = {}, lastHandled = 0, lastText = "", lastTextAt = 0, watching = false }
-local Listen = { active = false, record = false, hooked = {}, log = {} }
+Reviews = { log = {}, seen = {}, lastHandled = -1e9, lastText = "", lastTextAt = -1e9, watching = false }
+Listen = { active = false, record = false, hooked = {}, log = {} }
 
 local function listenRemote(r)
    if Listen.hooked[r] or r.ClassName ~= "RemoteEvent" then return end
@@ -610,7 +692,7 @@ local function listenRemote(r)
    end)
 end
 
-local Index = { prompts = {}, clicks = {}, remotes = {}, remoteSet = {}, ready = false }
+Index = { prompts = {}, clicks = {}, remotes = {}, remoteSet = {}, ready = false }
 
 local function indexAdd(o)
    local c = o.ClassName
@@ -657,7 +739,7 @@ local function isRemote(o)
    return o ~= nil and (o.ClassName == "RemoteEvent" or o.ClassName == "RemoteFunction")
 end
 
-local function findRemote(names)
+function findRemote(names)
    for _, name in ipairs(names) do
       if name ~= "" then
          if name:find(".", 1, true) then
@@ -672,7 +754,7 @@ local function findRemote(names)
    return nil
 end
 
-local function callRemote(r, args)
+function callRemote(r, args)
    args = args or { n = 0 }
    return pcall(function()
       if r.ClassName == "RemoteEvent" then
@@ -697,11 +779,11 @@ local function startLabelWatch()
       check()
       o:GetPropertyChangedSignal("Text"):Connect(check)
    end
-   table.insert(Connections, Player.PlayerGui.DescendantAdded:Connect(onAdded))
+   table.insert(Connections, PlayerGui.DescendantAdded:Connect(onAdded))
    table.insert(Connections, WS.DescendantAdded:Connect(onAdded))
 end
 
-local function refreshListen()
+function refreshListen()
    Listen.active = State.AutoPrice or Listen.record
    if Listen.active then
       for r in pairs(Index.remoteSet) do listenRemote(r) end
@@ -709,10 +791,14 @@ local function refreshListen()
    end
 end
 
+end
+
 -- =====================================================================
 -- 6. МОЙ УЧАСТОК (чтобы не ходить по чужим кассам)
 -- =====================================================================
-local Plot = { root = nil, center = nil, method = "не определён" }
+local Plot, instPosition, detectPlot, flashPlot, isMine
+do
+Plot = { root = nil, center = nil, method = "не определён" }
 
 local function myRef(v)
    if v == nil then return false end
@@ -781,7 +867,7 @@ local function nameHasPlayer(name)
    return false
 end
 
-local function instPosition(inst)
+function instPosition(inst)
    if inst:IsA("ProximityPrompt") or inst:IsA("ClickDetector") then
       local par = inst.Parent
       if par and par:IsA("Attachment") then return par.WorldPosition end
@@ -817,25 +903,42 @@ local function ascendToPlot(inst)
    for _ in pairs(Index.prompts) do total = total + 1 end
    local best
    for _, anc in ipairs(chain) do
-      if total < 20 or countPrompts(anc) <= total * 0.45 then best = anc end
+      if countPrompts(anc) <= total * 0.45 then best = anc end
    end
    return best or chain[1]
 end
 
 local function detectPlotByOwner()
+   local total = 0
+   for _ in pairs(Index.prompts) do total = total + 1 end
    local queue, qi = {}, 1
    for _, ch in ipairs(WS:GetChildren()) do queue[#queue + 1] = { ch, 1 } end
+   local best, bestN, bestHow = nil, 0, nil
+   local visited = 0
    while qi <= #queue do
       local node, depth = queue[qi][1], queue[qi][2]
       qi = qi + 1
-      if (node:IsA("Model") or node:IsA("Folder")) and not Players:GetPlayerFromCharacter(node) then
-         if ownerOf(node) == "mine" then return node, "по владельцу" end
-         if nameHasPlayer(node.Name) then return node, "по имени" end
+      visited = visited + 1
+      if visited % 300 == 0 then task.wait() end
+      if (node:IsA("Model") or node:IsA("Folder")) and not (node:IsA("Model") and Players:GetPlayerFromCharacter(node)) then
+         local how
+         if ownerOf(node) == "mine" then
+            how = "по владельцу"
+         elseif nameHasPlayer(node.Name) then
+            how = "по имени"
+         end
+         if how then
+            -- участком считаем объект с наибольшим числом промптов (покупатели и мелочи с Owner не в счёт)
+            local n = countPrompts(node)
+            local tooBig = total >= 20 and n > total * 0.5 -- контейнер всех участков
+            if n > bestN and not tooBig then best, bestN, bestHow = node, n, how end
+         end
          if depth < 4 then
             for _, ch in ipairs(node:GetChildren()) do queue[#queue + 1] = { ch, depth + 1 } end
          end
       end
    end
+   if best and bestN >= 3 then return best, bestHow end
    return nil
 end
 
@@ -904,20 +1007,24 @@ function Plot.set(root, method)
    end
 end
 
--- manual = true: игрок сам сказал «я стою на своём участке»
-local function detectPlot(manual)
+-- manual = true: игрок сам сказал «я стою на своём участке»; deep = разрешить тяжёлый поиск по табличкам
+local lastLabelScan = -1e9
+function detectPlot(manual, deep)
    if not manual then
       local root, how = detectPlotByOwner()
       if root then
          Plot.set(root, how)
          return true
       end
-      local lbl = detectPlotByLabels()
-      if lbl then
-         local r = ascendToPlot(lbl)
-         if r then
-            Plot.set(r, "по табличке")
-            return true
+      if deep or os.clock() - lastLabelScan > 300 then
+         lastLabelScan = os.clock()
+         local lbl = detectPlotByLabels()
+         if lbl then
+            local r = ascendToPlot(lbl)
+            if r then
+               Plot.set(r, "по табличке")
+               return true
+            end
          end
       end
    end
@@ -929,7 +1036,7 @@ local function detectPlot(manual)
    return false
 end
 
-local function flashPlot()
+function flashPlot()
    if not Plot.root then return false end
    local targets = {}
    if Plot.root:IsA("Model") then
@@ -978,7 +1085,7 @@ local function computeMine(inst)
    return pos ~= nil and Plot.center ~= nil and (pos - Plot.center).Magnitude <= State.PlotRadius
 end
 
-local function isMine(inst)
+function isMine(inst)
    local e = mineCache[inst]
    local now = os.clock()
    if e and now - e.t < 3 then return e.v end
@@ -987,13 +1094,17 @@ local function isMine(inst)
    return v
 end
 
+end
+
 -- =====================================================================
 -- 7. ДВИЖЕНИЕ И АНТИ-СИДЕНИЕ
 -- =====================================================================
-local lastHop = 0
+local approach, teleportTo, standUp, isCarrying, applySpeed
+do
+local lastHop = -1e9
 
 -- Подходим к объекту, только если он дальше range. Прыжки ограничены по частоте.
-local function approach(inst, range)
+function approach(inst, range)
    if State.MoveMode == "none" then return true end
    local hrp = getHRP()
    local pos = instPosition(inst)
@@ -1025,7 +1136,7 @@ local function approach(inst, range)
    return true
 end
 
-local function teleportTo(pos)
+function teleportTo(pos)
    local hrp = getHRP()
    if not hrp or not pos then return false end
    hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
@@ -1033,7 +1144,7 @@ local function teleportTo(pos)
    return true
 end
 
-local function standUp()
+function standUp()
    local hum = getHumanoid()
    if hum and (hum.Sit or hum.SeatPart ~= nil) then
       hum.Sit = false
@@ -1043,24 +1154,28 @@ local function standUp()
    return false
 end
 
-local function isCarrying()
+function isCarrying()
    local c = Player.Character
    return c ~= nil and c:FindFirstChildOfClass("Tool") ~= nil
 end
 
-local function applySpeed()
+function applySpeed()
    local hum = getHumanoid()
    if hum then hum.WalkSpeed = State.SpeedEnabled and State.SpeedValue or 16 end
+end
+
 end
 
 -- =====================================================================
 -- 8. ДВИЖОК ДЕЙСТВИЙ: промпты ТОЛЬКО на моём участке
 -- =====================================================================
-local lastUiScan = 0
+local classCache, markSuccess, classify, candidates, promptTask, tryBound, serveStep, placeStep, orderStep, slowStep, rewardStep, decorStep, due
+do
+local lastUiScan = -1e9
 local lastFired = setmetatable({}, { __mode = "k" })
-local classCache = setmetatable({}, { __mode = "k" })
+classCache = setmetatable({}, { __mode = "k" })
 
-local function markSuccess()
+function markSuccess()
    State.LastSuccess = os.clock()
    State.TotalActions = State.TotalActions + 1
    if State.AutoFarm then State.FarmActions = State.FarmActions + 1 end
@@ -1072,17 +1187,30 @@ local function promptText(p, withParent)
    return normalizeText(s)
 end
 
-local function classify(p)
+function classify(p)
    local e = classCache[p]
    local now = os.clock()
    if e and now - e.t < 1.5 then return e.v end
    local v = nil
    if not matchesAny(promptText(p, false), GlobalExclude) then
-      local text = promptText(p, true)
-      for _, key in ipairs(CatOrder) do
-         if matchesStart(text, CatKW[key]) then
-            v = key
-            break
+      -- 1) сначала по тексту действия (Pick Up, Load, Checkout...) — так надёжнее
+      local actionText = normalizeText(p.ActionText)
+      if actionText ~= "" then
+         for _, key in ipairs(CatOrder) do
+            if matchesStart(actionText, CatKW[key]) then
+               v = key
+               break
+            end
+         end
+      end
+      -- 2) иначе по всему тексту: действие, объект, имя, родитель
+      if not v then
+         local text = promptText(p, true)
+         for _, key in ipairs(CatOrder) do
+            if matchesStart(text, CatKW[key]) then
+               v = key
+               break
+            end
          end
       end
    end
@@ -1091,7 +1219,7 @@ local function classify(p)
 end
 
 -- Промпты категории на моём участке, ближайшие первыми
-local function candidates(cat, requireEnabled)
+function candidates(cat, requireEnabled)
    local list = {}
    local hrp = getHRP()
    local origin = hrp and hrp.Position
@@ -1126,7 +1254,7 @@ end
 local pickHist = setmetatable({}, { __mode = "k" })
 
 -- Выполнить до maxN промптов категории. Возвращает (успех, сколько_нажато)
-local function promptTask(cat, maxN, cooldown)
+function promptTask(cat, maxN, cooldown)
    local did, fired = false, 0
    for _, c in ipairs(candidates(cat, true)) do
       if fired >= maxN then break end
@@ -1145,7 +1273,7 @@ local function promptTask(cat, maxN, cooldown)
                   pickHist[c.p] = h
                end
                h.n = h.n + 1
-               if h.n > 4 then lastFired[c.p] = now + 120 end -- один и тот же объект берём слишком часто — пауза
+               if h.n > 10 then lastFired[c.p] = now + 60 end -- один и тот же объект берём слишком часто — пауза
             end
          end
          fired = fired + 1
@@ -1155,7 +1283,7 @@ local function promptTask(cat, maxN, cooldown)
    return did, fired
 end
 
-local function tryBound(key)
+function tryBound(key)
    local bind = Binds[key]
    if not bind or bind.remote == "" then return false end
    local r = findRemote({ bind.remote })
@@ -1181,9 +1309,21 @@ local function uiFollowUp(keywords)
 end
 
 -- Обслуживание: погрузка → касса → помощь → взять дерево
-local function serveStep()
+-- Обслуживание клиентов. Стартовая категория вращается по кругу, чтобы одна из них
+-- (например, горящая «погрузка» без дерева в руках) не съедала весь бюджет цикла.
+local ServeCats = { "load", "checkout", "help", "pickup" }
+local serveRot = 0
+
+function serveStep()
    local budget = State.MaxPerTick
-   for _, cat in ipairs({ "load", "checkout", "help", "pickup" }) do
+   -- несём дерево — сначала пробуем погрузку; иначе вращаем стартовую категорию
+   if isCarrying() or findPlaceButton() ~= nil then
+      serveRot = 1
+   else
+      serveRot = serveRot % #ServeCats + 1
+   end
+   for i = 0, #ServeCats - 1 do
+      local cat = ServeCats[(serveRot - 1 + i) % #ServeCats + 1]
       if budget <= 0 then break end
       -- не берём новое дерево, пока несём прошлое или ждём кнопку Place
       local skip = cat == "pickup" and (isCarrying() or findPlaceButton() ~= nil or os.clock() - State.JustPicked < 2.5)
@@ -1198,12 +1338,13 @@ local function serveStep()
    end
 end
 
-local function placeStep()
+function placeStep()
    if tryBound("place") then return end
+   promptTask("unload", 1, 10)
    promptTask("place", 2, 1.5)
 end
 
-local function orderStep()
+function orderStep()
    if tryBound("order") then return end
    local did = promptTask("order", 1, State.OrderInterval * 0.8)
    if did then
@@ -1212,7 +1353,7 @@ local function orderStep()
    end
 end
 
-local function slowStep(cat)
+function slowStep(cat)
    if tryBound(cat) then return end
    local did = promptTask(cat, 1, State.SlowInterval * 0.8)
    if did then
@@ -1221,7 +1362,7 @@ local function slowStep(cat)
    end
 end
 
-local function rewardStep()
+function rewardStep()
    if tryBound("reward") then return end
    local r = findRemote({ "ClaimReward", "ClaimDaily", "DailyReward", "ClaimGift" })
    if r and callRemote(r) then
@@ -1231,7 +1372,7 @@ local function rewardStep()
    promptTask("reward", 1, 30)
 end
 
-local function decorStep()
+function decorStep()
    local did = false
    if tryBound("decor") then
       did = true
@@ -1247,21 +1388,25 @@ local function jitter()
    if State.Humanize then return 0.85 + math.random() * 0.5 end
    return 1
 end
-local function due(key, interval)
+function due(key, interval)
    local now = os.clock()
    if now >= (Schedule[key] or 0) then
-      Schedule[key] = now + interval * jitter()
+      Schedule[key] = now + interval * jitter() * State.LagFactor
       return true
    end
    return false
 end
 
+end
+
 -- =====================================================================
 -- 8b. РАССТАНОВКА ДЕРЕВЬЕВ: взять → телепорт по зоне → нажать Place
 -- =====================================================================
-local function markZoneDirty()
+local markZoneDirty, previewZone, placeCarried, farmStep, runOnce
+do
+function markZoneDirty()
    Zone.dirty = true
-   Zone.lastBuild = 0
+   Zone.lastBuild = -1e9
 end
 
 local function jumpTo(pos)
@@ -1377,7 +1522,7 @@ local function nextSpot()
    return nil
 end
 
-local function previewZone()
+function previewZone()
    if Zone.dirty or #Zone.points == 0 then buildZone() end
    local folder = Instance.new("Folder")
    folder.Name = "CheatHubZonePreview"
@@ -1400,14 +1545,18 @@ local function previewZone()
 end
 
 -- Несём дерево: прыгаем по точкам зоны и жмём Place, пока дерево не поставится
-local function placeCarried()
+local function placeCarriedImpl()
    State.Status = "Расстановка деревьев"
    local tries = 0
    while State.Running and tries < State.MaxPlaceTries do
       if not findPlaceButton(true) then return true end
       local idx, spot = nextSpot()
       if not spot then
-         notify("⚠️ Нет точек для расстановки", "Задай зону: «Автофарм» → «Расстановка» → углы A и B.", 8, "zone_empty", 30)
+         if #Zone.points > 0 then
+            notify("ℹ️ Все точки заняты", "Зона заполнена. Увеличь зону или подожди, пока деревья раскупят.", 8, "zone_full", 60)
+         else
+            notify("⚠️ Нет точек для расстановки", "Задай зону: «Автофарм» → «Расстановка» → углы A и B.", 8, "zone_empty", 30)
+         end
          break
       end
       jumpTo(spot)
@@ -1432,6 +1581,18 @@ local function placeCarried()
    return false
 end
 
+function placeCarried()
+   if State.Placing then return false end
+   State.Placing = true
+   local ok, res = pcall(placeCarriedImpl)
+   State.Placing = false
+   if not ok then
+      logError("placeCarried", res)
+      return false
+   end
+   return res
+end
+
 local function handleCarrying()
    if not State.AutoPlace or os.clock() < State.PlaceFailUntil then return false end
    if not (isCarrying() or os.clock() < State.CarryUntil) then return false end
@@ -1440,16 +1601,17 @@ local function handleCarrying()
    return true
 end
 
-local function farmStep()
+function farmStep()
    -- Несём дерево и есть кнопка Place — сначала ставим (если только клиенту не нужна погрузка)
    local now = os.clock()
    local loadReady = State.AutoServe and #candidates("load", true) > 0
-   if loadReady then
+   if loadReady and findPlaceButton() ~= nil then
+      -- несём дерево, а клиенту нужна погрузка: сначала пробуем довезти, но не дольше 8 сек
       State.LoadSince = State.LoadSince or now
-      -- промпт погрузки горит дольше 8 сек — не даём ему блокировать расстановку
       if now - State.LoadSince > 8 then loadReady = false end
    else
       State.LoadSince = nil
+      loadReady = false
    end
    if not loadReady and handleCarrying() then return end
    if State.AutoServe and due("serve", State.CycleDelay) then serveStep() end
@@ -1462,7 +1624,7 @@ local function farmStep()
 end
 
 -- Одно действие по кнопке «проверить»
-local function runOnce(key)
+function runOnce(key)
    if tryBound(key) then return true, "привязка" end
    if Actions[key].noPrompt then return false, "нужна привязка (Spy)" end
    local did, fired = promptTask(key, 1, 0)
@@ -1471,9 +1633,13 @@ local function runOnce(key)
    return false, "на участке нет подходящих промптов"
 end
 
+end
+
 -- =====================================================================
 -- 9. ЦЕНА И ОТЗЫВЫ («слишком дорого» → снизить цену)
 -- =====================================================================
+local applyPrice
+do
 local ExpensiveKW = { "too expensive", "expensive", "pricey", "overpriced", "too high", "price is high", "rip off", "ripoff", "costly", "too much", "дорого" }
 
 local function isExpensiveText(s)
@@ -1481,7 +1647,7 @@ local function isExpensiveText(s)
 end
 
 local function setPriceViaUI(price)
-   for _, o in ipairs(Player.PlayerGui:GetDescendants()) do
+   for _, o in ipairs(PlayerGui:GetDescendants()) do
       if o:IsA("TextBox") and o.Visible and not isOwnGui(o) then
          local label = (o.Name .. " " .. (o.PlaceholderText or "")):lower()
          if label:find("price", 1, true) then
@@ -1494,7 +1660,7 @@ local function setPriceViaUI(price)
    return false
 end
 
-local function applyPrice(newPrice)
+function applyPrice(newPrice)
    local bind = Binds.price
    if bind and bind.remote ~= "" then
       local r = findRemote({ bind.remote })
@@ -1521,7 +1687,8 @@ local function handleExpensive(text)
    newP = math.max(1, math.floor(newP + 0.5))
    if applyPrice(newP) then
       Price.value = newP
-      notify("💲 Цена снижена", ("Отзыв «%s» → цена %s"):format(text:sub(1, 40), fmtNum(newP)), 6, "price_ok", 5)
+      State.PriceChanges = State.PriceChanges + 1
+      notify("💲 Цена снижена", ("Отзыв «%s» → цена %s"):format(cut(text, 40), fmtNum(newP)), 6, "price_ok", 5)
    else
       notify("Не удалось сменить цену", "Привяжи действие «Цена» (вкладка «Правила»).", 8, "price_fail", 60)
    end
@@ -1546,9 +1713,13 @@ function Reviews.feed(text, source)
    end
 end
 
+end
+
 -- =====================================================================
 -- 10. STATS (деньги / репутация) И ГЛАВНЫЙ ПЕРЕКЛЮЧАТЕЛЬ
 -- =====================================================================
+local readStat, setFarm
+do
 local STAT_KW = {
    cash = { "cash", "money", "coin", "dollar", "buck", "balance" },
    rep = { "reputation" },
@@ -1560,19 +1731,34 @@ local function statMatches(kind, name, override)
    return matchesAny(n, STAT_KW[kind])
 end
 
-local function readStat(kind, override)
+-- Корни поиска валюты: leaderstats и прочие дети игрока (но не PlayerGui — он огромный)
+local function statRoots()
+   local roots = {}
+   local ls = Player:FindFirstChild("leaderstats")
+   if ls then roots[#roots + 1] = ls end
+   for _, ch in ipairs(Player:GetChildren()) do
+      local c = ch.ClassName
+      if ch ~= ls and c ~= "PlayerGui" and c ~= "PlayerScripts" and c ~= "Backpack" and c ~= "StarterGear" then
+         roots[#roots + 1] = ch
+      end
+   end
+   return roots
+end
+
+function readStat(kind, override)
    local ref = cached("stat:" .. kind .. ":" .. tostring(override or ""), function()
-      for _, root in ipairs({ Player:FindFirstChild("leaderstats"), Player }) do
-         if root then
-            for _, v in ipairs(root:GetDescendants()) do
-               if (v:IsA("IntValue") or v:IsA("NumberValue")) and statMatches(kind, v.Name, override) then
-                  return v
-               end
+      for _, root in ipairs(statRoots()) do
+         if (root:IsA("IntValue") or root:IsA("NumberValue")) and statMatches(kind, root.Name, override) then
+            return root
+         end
+         for _, v in ipairs(root:GetDescendants()) do
+            if (v:IsA("IntValue") or v:IsA("NumberValue")) and statMatches(kind, v.Name, override) then
+               return v
             end
          end
       end
       return nil
-   end)
+   end, 30)
    if ref then return ref.Value end
    for name, val in pairs(Player:GetAttributes()) do
       if type(val) == "number" and statMatches(kind, name, override) then return val end
@@ -1580,7 +1766,7 @@ local function readStat(kind, override)
    return nil
 end
 
-local function setFarm(v)
+function setFarm(v)
    if State.AutoFarm == v then return end
    State.AutoFarm = v
    if v then
@@ -1596,8 +1782,16 @@ local function setFarm(v)
       end
    else
       State.Status = "Остановлено"
+      if State.FarmStart then
+         State.FarmSeconds = State.FarmSeconds + (os.clock() - State.FarmStart)
+         local cashNow = readStat("cash", State.CashName)
+         if cashNow and State.FarmStartCash then State.GainedTotal = State.GainedTotal + (cashNow - State.FarmStartCash) end
+         State.FarmStart = nil
+      end
       notify("Автофарм", "Остановлен.", 3, "farm")
    end
+end
+
 end
 
 -- =====================================================================
@@ -1750,7 +1944,9 @@ end
 -- =====================================================================
 -- 12. SPY, TEACH, СКАНЕР, СЕРВИС
 -- =====================================================================
-local Spy = env.CheatHubSpy
+local Spy, installSpy, formatCall, spyJournalText, Teach, teachJournalText, CatInputs, teachBind, plotPromptReport, scanGame, capsReport, queueReload, rejoin, serverHop, fpsBoost, setAfkSaver
+do
+Spy = env.CheatHubSpy
 if not Spy then
    Spy = {
       Hooked = false, Enabled = false, Log = {}, LastTime = {},
@@ -1759,7 +1955,7 @@ if not Spy then
    env.CheatHubSpy = Spy
 end
 
-local function installSpy()
+function installSpy()
    if Spy.Hooked then return true end
    if type(hookmetamethod) ~= "function" or type(getnamecallmethod) ~= "function" then return false end
    local wrap = (type(newcclosure) == "function") and newcclosure or function(f) return f end
@@ -1830,7 +2026,7 @@ local function encodeArg(v, depth)
 end
 
 -- Строка привязки из записи Spy: "Путь | аргументы". priceMode — последнее число станет {price}
-local function formatCall(rec, priceMode)
+function formatCall(rec, priceMode)
    local list, bad = {}, false
    for i = 1, rec.args.n do
       local e, b = encodeArg(rec.args[i], 0)
@@ -1864,7 +2060,7 @@ local function formatCall(rec, priceMode)
    return path .. " | " .. table.concat(toks, ", "), bad
 end
 
-local function spyJournalText()
+function spyJournalText()
    if #Spy.Log == 0 then return "Журнал пуст. Включи Spy и сделай действие в игре руками." end
    local lines = {}
    for i = math.max(1, #Spy.Log - 11), #Spy.Log do
@@ -1877,14 +2073,14 @@ local function spyJournalText()
 end
 
 -- Teach: запоминаем промпты, которые игрок нажал РУКАМИ
-local Teach = { enabled = false, log = {} }
+Teach = { enabled = false, log = {} }
 table.insert(Connections, PPS.PromptTriggered:Connect(function(prompt, plr)
    if not Teach.enabled or plr ~= Player or State.Firing then return end
    Teach.log[#Teach.log + 1] = prompt
    if #Teach.log > 30 then table.remove(Teach.log, 1) end
 end))
 
-local function teachJournalText()
+function teachJournalText()
    if #Teach.log == 0 then return "Пусто. Включи запись и нажми нужный объект в игре руками." end
    local lines = {}
    for i = math.max(1, #Teach.log - 11), #Teach.log do
@@ -1896,12 +2092,12 @@ local function teachJournalText()
 end
 
 -- Добавляем слово из выбранного промпта в правила категории (через поле во вкладке «Правила»)
-local CatInputs = {}
-local function teachBind(cat, idx)
+CatInputs = {}
+function teachBind(cat, idx)
    local p = Teach.log[idx or #Teach.log]
    if not p then return false, "журнал пуст" end
    local token = (p.ActionText ~= "" and p.ActionText) or (p.ObjectText ~= "" and p.ObjectText) or p.Name
-   token = token:lower():gsub("^%s+", ""):gsub("%s+$", "")
+   token = normalizeText(token):gsub("^%s+", ""):gsub("%s+$", "")
    for _, kw in ipairs(CatKW[cat]) do
       if kw == token then return true, "слово уже есть: " .. token end
    end
@@ -1912,7 +2108,7 @@ local function teachBind(cat, idx)
 end
 
 -- Отчёт по моим промптам: что нашлось на участке и как классифицировалось
-local function plotPromptReport()
+function plotPromptReport()
    local groups, order, total, mine = {}, {}, 0, 0
    for p in pairs(Index.prompts) do
       total = total + 1
@@ -1939,7 +2135,7 @@ local function plotPromptReport()
 end
 
 -- Скан remote: полный отчёт + похожие по действиям
-local function scanGame()
+function scanGame()
    local rem = {}
    for r in pairs(Index.remoteSet) do rem[#rem + 1] = r end
    table.sort(rem, function(a, b) return a:GetFullName() < b:GetFullName() end)
@@ -1963,7 +2159,7 @@ local function scanGame()
    return table.concat(summary, "\n"), table.concat(report, "\n")
 end
 
-local function capsReport()
+function capsReport()
    local names = {
       "fireproximityprompt", "fireclickdetector", "firesignal", "getconnections",
       "hookmetamethod", "setclipboard", "queue_on_teleport", "setfpscap", "gethui",
@@ -1975,13 +2171,13 @@ local function capsReport()
    return "Executor: " .. Executor.Name .. "\n" .. table.concat(t, "\n")
 end
 
-local function queueReload()
+function queueReload()
    if CONFIG.ReloadUrl ~= "" and type(queue_on_teleport) == "function" then
       pcall(queue_on_teleport, ("loadstring(game:HttpGet(%q))()"):format(CONFIG.ReloadUrl))
    end
 end
 
-local function rejoin()
+function rejoin()
    queueReload()
    if #Players:GetPlayers() <= 1 then
       TeleportService:Teleport(game.PlaceId, Player)
@@ -1990,7 +2186,7 @@ local function rejoin()
    end
 end
 
-local function serverHop()
+function serverHop()
    local ok, body = pcall(function()
       return game:HttpGet("https://games.roblox.com/v1/games/" .. tostring(game.PlaceId) .. "/servers/Public?sortOrder=Asc&limit=100")
    end)
@@ -2010,7 +2206,7 @@ local function serverHop()
    return true
 end
 
-local function fpsBoost()
+function fpsBoost()
    pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
    pcall(function() Lighting.GlobalShadows = false end)
    local n = 0
@@ -2023,53 +2219,387 @@ local function fpsBoost()
    return n
 end
 
-local function setAfkSaver(v)
+function setAfkSaver(v)
    State.AfkSaver = v
    pcall(function() RunService:Set3dRenderingEnabled(not v) end)
    if type(setfpscap) == "function" then pcall(setfpscap, v and 15 or 60) end
 end
 
--- Промокоды: remote -> либо UI (Menu → Codes → ENTER CODE → REDEEM)
-local function redeemOne(code)
-   local r = findRemote({ "RedeemCode", "Redeem", "Code", "RedeemPromoCode" })
-   if r and callRemote(r, { n = 1, code }) then return true, "remote" end
+end
 
+-- =====================================================================
+-- 12b. НОВЫЕ ФУНКЦИИ: коды, самопроверка, отчёты, FPS, клейм
+-- =====================================================================
+local copyText, claimStep, RedeemedInput, CodesView, parseCodes, pendingCodes, runCodes, selfCheck, sessionReport, devReport
+do
+function copyText(text, okMsg)
+   if clip(text) then
+      notify("Готово", okMsg or "Скопировано.", 4, "copytext")
+   else
+      notify("Нет буфера", "Executor не поддерживает setclipboard — текст не скопирован.", 5, "copytext")
+   end
+end
+
+-- FPS (сглаженный)
+table.insert(Connections, RunService.Heartbeat:Connect(function(dt)
+   if dt and dt > 0 then State.Fps = State.Fps * 0.95 + (1 / dt) * 0.05 end
+end))
+
+-- Авто-клейм кнопок Claim на экране (сначала собираем список, потом жмём: клик может «засыпать»)
+local claimedAt = setmetatable({}, { __mode = "k" })
+function claimStep()
+   local found = {}
+   for btn in pairs(GuiIndex.buttons) do
+      if #found >= 2 then break end
+      if btn.Parent and (os.clock() - (claimedAt[btn] or -1e9)) > 20 and not isOwnGui(btn) and isGuiVisible(btn) then
+         local label = buttonLabel(btn)
+         if matchesAny(label, State.ClaimKW) and not matchesAny(label, { "plot", "robux", "buy" }) then
+            found[#found + 1] = btn
+         end
+      end
+   end
+   local did = false
+   for _, btn in ipairs(found) do
+      claimedAt[btn] = os.clock()
+      if clickGui(btn) then
+         did = true
+         markSuccess()
+      end
+   end
+   return did
+end
+
+-- ---------- промокоды: открыть меню, ввести, прочитать ответ игры ----------
+local CodeState = { running = false }
+
+local FEEDBACK_KW = { "redeem", "invalid", "expired", "already", "success", "reward", "claimed", "not valid", "unknown", "used" }
+local OK_KW = { "success", "redeemed!", "you got", "you received", "you earned", "claimed", "reward" }
+local DUP_KW = { "already", "used" }
+local BAD_KW = { "invalid", "expired", "not valid", "unknown", "doesn't exist", "does not exist" }
+
+function parseCodes(text)
+   local set = {}
+   for w in tostring(text or ""):gmatch("[^,]+") do
+      local s = w:match("^%s*(.-)%s*$")
+      if s ~= "" then set[s] = true end
+   end
+   return set
+end
+
+local function redeemedList()
+   local list = {}
+   for code in pairs(State.Redeemed) do list[#list + 1] = code end
+   table.sort(list)
+   return list
+end
+
+local function markRedeemed(code)
+   if State.Redeemed[code] then return end
+   State.Redeemed[code] = true
+   if RedeemedInput then RedeemedInput:Set(table.concat(redeemedList(), ", ")) end
+end
+
+-- Новые коды: ещё не обработанные и не пробованные в этой сессии
+function pendingCodes()
+   local out = {}
+   for _, c in ipairs(ActiveCodes) do
+      if not State.Redeemed[c] and not State.Tried[c] then out[#out + 1] = c end
+   end
+   return out
+end
+
+local function snapshotTexts()
+   local map = {}
+   for _, o in ipairs(PlayerGui:GetDescendants()) do
+      if o.ClassName == "TextLabel" and o.Text ~= "" and not isOwnGui(o) then
+         map[o.Text] = (map[o.Text] or 0) + 1
+      end
+   end
+   return map
+end
+
+local function newTexts(before, after)
+   local res = {}
+   for t, c in pairs(after) do
+      if (before[t] or 0) < c then res[#res + 1] = t end
+   end
+   table.sort(res)
+   return res
+end
+
+-- Тексты-ответы, которые сейчас видны на экране (даже не новые)
+local function visibleFeedbackTexts(snapshot)
+   local res = {}
+   for t in pairs(snapshot) do
+      if matchesAny(t:lower(), FEEDBACK_KW) then res[#res + 1] = t end
+   end
+   table.sort(res)
+   return res
+end
+
+local function verdictFromTexts(list)
+   for _, t in ipairs(list) do
+      local low = t:lower()
+      if matchesAny(low, FEEDBACK_KW) then
+         if matchesAny(low, BAD_KW) then return "bad", t end
+         if matchesAny(low, DUP_KW) then return "dup", t end
+         if matchesAny(low, OK_KW) then return "ok", t end
+         return "?", t
+      end
+   end
+   return nil
+end
+
+local function findCodesUI()
    local box
-   for _, o in ipairs(Player.PlayerGui:GetDescendants()) do
-      if o:IsA("TextBox") and not isOwnGui(o) then
-         local ph = (o.PlaceholderText or ""):lower()
-         if ph:find("code", 1, true) or o.Name:lower():find("code", 1, true) then
-            box = o
+   for b in pairs(GuiIndex.boxes) do
+      if b.Parent and not isOwnGui(b) then
+         local ph = (b.PlaceholderText or ""):lower()
+         if ph:find("code", 1, true) or b.Name:lower():find("code", 1, true) then
+            box = b
             break
          end
       end
    end
-   if not box then return false, "поле кода не найдено — открой Menu → Codes" end
-   box.Text = code
-
+   if not box then return nil end
    local btn
    local scope = box.Parent
    for _ = 1, 4 do
       if not scope then break end
-      for _, o in ipairs(scope:GetDescendants()) do
-         if o:IsA("TextButton") and ((o.Text or ""):lower():find("redeem", 1, true) or o.Name:lower():find("redeem", 1, true)) then
-            btn = o
+      for b in pairs(GuiIndex.buttons) do
+         if b:IsDescendantOf(scope) and buttonLabel(b):find("redeem", 1, true) then
+            btn = b
             break
          end
       end
       if btn then break end
       scope = scope.Parent
    end
-   if not btn then return false, "кнопка Redeem не найдена" end
-   if clickGui(btn) then return true, "ui" end
-   return false, "клик по Redeem не сработал"
+   return box, btn
+end
+
+-- Menu → Codes: сами открываем окно кодов, если оно ещё не открыто
+local function openCodesUI()
+   local b = findButton({ "codes" })
+   if not b then
+      local m = findButton({ "menu" })
+      if m then
+         clickGui(m)
+         task.wait(0.8)
+         b = findButton({ "codes" })
+      end
+   end
+   if b then
+      clickGui(b)
+      task.wait(0.8)
+      return true
+   end
+   return false
+end
+
+-- Вернёт: вердикт ("ok" | "dup" | "bad" | "?" | nil), текст или причину, новый снимок текстов
+local function redeemOne(code, before)
+   local sent = false
+   local r = findRemote({ "RedeemCode", "Redeem", "Code", "RedeemPromoCode" })
+   if r and callRemote(r, { n = 1, code }) then sent = true end
+   if not sent then
+      local box, btn = findCodesUI()
+      if not box or not btn then
+         if not openCodesUI() then return nil, "не нашёл окно кодов (Menu → Codes)" end
+         box, btn = findCodesUI()
+         if not box or not btn then return nil, "окно кодов не открылось" end
+      end
+      box.Text = code
+      if not clickGui(btn) then return nil, "клик по Redeem не сработал" end
+   end
+   task.wait(0.9)
+   local after = snapshotTexts()
+   local verdict, text = verdictFromTexts(newTexts(before, after))
+   return verdict, text, after
+end
+
+-- Вернёт: строки результата, причина остановки, сколько ok / dup / bad
+local function redeemBatch(codes)
+   if CodeState.running then return nil, "уже идёт ввод кодов" end
+   if #codes == 0 then return {}, nil, 0, 0, 0 end
+   CodeState.running = true
+   local lines, abort = {}, nil
+   local okN, dupN, badN = 0, 0, 0
+   local ok, err = pcall(function()
+      local before = snapshotTexts()
+      local prevVerdict, prevText
+      for _, code in ipairs(codes) do
+         if not State.Running then break end
+         local verdict, detail, after = redeemOne(code, before)
+         if after then before = after end
+         State.Tried[code] = true
+         -- игра могла показать тот же текст, что и для прошлого кода: тогда «нового» текста нет
+         local uncertain = false
+         if verdict == nil and after and prevText then
+            for _, t in ipairs(visibleFeedbackTexts(after)) do
+               if t == prevText then
+                  verdict, detail, uncertain = prevVerdict, t, true
+                  break
+               end
+            end
+         end
+         local short = detail and cut(detail, 60) or ""
+         if verdict == nil then
+            if detail and tostring(detail):find("окн", 1, true) then
+               abort = detail
+               break
+            end
+            lines[#lines + 1] = code .. ": ❓ " .. short
+         elseif uncertain then
+            lines[#lines + 1] = code .. ": ≈ " .. short .. " (как у прошлого кода)"
+         elseif verdict == "ok" then
+            okN = okN + 1
+            markRedeemed(code)
+            prevVerdict, prevText = verdict, detail
+            lines[#lines + 1] = code .. ": ✅ " .. short
+         elseif verdict == "dup" then
+            dupN = dupN + 1
+            markRedeemed(code)
+            prevVerdict, prevText = verdict, detail
+            lines[#lines + 1] = code .. ": ☑️ " .. short
+         elseif verdict == "bad" then
+            badN = badN + 1
+            markRedeemed(code)
+            prevVerdict, prevText = verdict, detail
+            lines[#lines + 1] = code .. ": ❌ " .. short
+         else
+            lines[#lines + 1] = code .. ": ❓ " .. short
+         end
+         task.wait(0.5)
+      end
+   end)
+   CodeState.running = false
+   if not ok then logError("redeemBatch", err) end
+   if CodesView then
+      CodesView:Set({ Title = "Результаты кодов", Content = (#lines > 0) and table.concat(lines, "\n") or "—" })
+   end
+   return lines, abort, okN, dupN, badN
+end
+
+function runCodes(list)
+   playSound("6895079853")
+   local lines, abort, okN, dupN, badN = redeemBatch(list)
+   if not lines then
+      notify("Коды", abort or "ошибка", 4, "codes")
+   elseif abort then
+      notify("Коды не введены", abort .. ". Открой Menu → Codes и повтори.", 7, "codes")
+   elseif #lines == 0 then
+      notify("Коды", "Новых кодов нет — все уже обработаны.", 4, "codes")
+   else
+      notify("Коды", ("Успешно: %d | уже были: %d | не подошли: %d"):format(okN or 0, dupN or 0, badN or 0), 7, "codes")
+   end
+end
+
+-- ---------- самопроверка и отчёты ----------
+local function countMine(cat)
+   local n = 0
+   for p in pairs(Index.prompts) do
+      if p.Parent and classify(p) == cat and isMine(p) then n = n + 1 end
+   end
+   return n
+end
+
+function selfCheck()
+   local lines = {}
+   local function add(ok, text) lines[#lines + 1] = (ok and "✅ " or "❌ ") .. text end
+   local function info(text) lines[#lines + 1] = "ℹ️ " .. text end
+   add(true, "Версия v12 | Executor: " .. Executor.Name)
+   local np, nr, nb = 0, 0, 0
+   for _ in pairs(Index.prompts) do np = np + 1 end
+   for _ in pairs(Index.remoteSet) do nr = nr + 1 end
+   for _ in pairs(GuiIndex.buttons) do nb = nb + 1 end
+   add(Index.ready, ("Индекс: промптов %d, remote %d, кнопок %d"):format(np, nr, nb))
+   local plotOk = Plot.root ~= nil and Plot.root.Parent ~= nil
+   add(plotOk, "Участок: " .. (plotOk and (Plot.root:GetFullName() .. " (" .. Plot.method .. ")") or "не найден"))
+   local parts, mineTotal = {}, 0
+   for _, cat in ipairs(CatOrder) do
+      local n = countMine(cat)
+      mineTotal = mineTotal + n
+      if n > 0 then parts[#parts + 1] = cat .. " " .. n end
+   end
+   add(mineTotal > 0, "Промпты на участке: " .. (#parts > 0 and table.concat(parts, ", ") or "нет"))
+   local cash = readStat("cash", State.CashName)
+   add(cash ~= nil, "Деньги: " .. (cash and fmtNum(cash) or "не найдены (укажи имя во вкладке «Диагностика»)"))
+   add(type(fireproximityprompt) == "function", "fireproximityprompt (нажатие промптов)")
+   add(type(getconnections) == "function" or type(firesignal) == "function", "getconnections/firesignal (клики по кнопкам)")
+   local btn = findPlaceButton(true)
+   info("Кнопка Place на экране: " .. (btn and buttonLabel(btn) or "нет (нормально, пока дерево не в руках)"))
+   add(#Zone.points > 0 or State.ZoneMode ~= "auto", "Зона расстановки: точек " .. #Zone.points .. " (режим " .. State.ZoneMode .. ")")
+   add(#ErrorLog == 0, "Ошибок в журнале: " .. #ErrorLog)
+   add(State.Fps >= 20, ("FPS %.0f, ping %.0f мс"):format(State.Fps, Player:GetNetworkPing() * 1000))
+   return table.concat(lines, "\n")
+end
+
+function sessionReport()
+   local now = os.clock()
+   local cash = readStat("cash", State.CashName)
+   local farmSec, gained = State.FarmSeconds, State.GainedTotal
+   if State.AutoFarm and State.FarmStart then
+      farmSec = farmSec + (now - State.FarmStart)
+      if cash and State.FarmStartCash then gained = gained + (cash - State.FarmStartCash) end
+   end
+   local perHour = (farmSec > 30) and (gained / (farmSec / 3600)) or 0
+   local lines = {
+      "CheatHub v12 — отчёт сессии",
+      "Сессия: " .. fmtTime(now - State.SessionStart),
+      "Автофарм работал: " .. fmtTime(farmSec),
+      "Деньги сейчас: " .. fmtNum(cash),
+      "Заработано за фарм: " .. fmtNum(gained) .. " (≈ " .. fmtNum(perHour) .. "/ч)",
+      "Действий: " .. State.TotalActions,
+      "Поставлено деревьев: " .. State.PlacedCount,
+      "Снижений цены: " .. State.PriceChanges,
+      "Ошибок: " .. #ErrorLog,
+   }
+   return table.concat(lines, "\n")
+end
+
+function devReport()
+   local out = {}
+   local function add(s) out[#out + 1] = s end
+   add("=== CheatHub v12: отчёт для разработчика ===")
+   add(selfCheck())
+   add("")
+   add("-- настройки --")
+   for _, k in ipairs({ "AutoFarm", "AutoOrder", "AutoServe", "AutoPlace", "AutoHire", "AutoUpgrade", "AutoReward", "AutoCollect",
+      "AutoDecor", "AutoPrice", "MoveMode", "ZoneMode", "ZoneSpacing", "MaxPlaceTries", "PlaceSettle", "CycleDelay",
+      "OrderInterval", "SlowInterval", "PlotRadius", "LagFactor" }) do
+      add(k .. " = " .. tostring(State[k]))
+   end
+   add("PlaceBtnKW = " .. table.concat(State.PlaceBtnKW, ", "))
+   add("-- участок --")
+   add("root = " .. (Plot.root and Plot.root:GetFullName() or "nil") .. " | method = " .. Plot.method)
+   if Plot.center then add("center = " .. tostring(Plot.center)) end
+   add("-- видимые кнопки интерфейса --")
+   local n = 0
+   for btn in pairs(GuiIndex.buttons) do
+      if btn.Parent and not isOwnGui(btn) and isGuiVisible(btn) then
+         n = n + 1
+         if n <= 80 then add(buttonLabel(btn) .. "  [" .. btn:GetFullName() .. "]") end
+      end
+   end
+   add("-- промпты моего участка --")
+   local _, fullPrompts = plotPromptReport()
+   add(fullPrompts)
+   add("-- remote --")
+   local _, fullRemotes = scanGame()
+   add(fullRemotes)
+   add("-- ошибки --")
+   for _, e in ipairs(ErrorLog) do add(("[%.0f] %s: %s"):format(e.t - State.SessionStart, e.where, e.msg)) end
+   return table.concat(out, "\n")
+end
+
 end
 
 -- =====================================================================
 -- 13. UI
 -- =====================================================================
-local L_Plot, L_Status, L_Cash, L_Income, L_Rep, L_Actions, L_Time, L_Zone
-local DecorLabel
+local L_Plot, L_Status, L_Cash, L_Income, L_Rep, L_Actions, L_Time, L_Zone, L_Perf, DecorLabel
+do
 local BindInputs = {}
 local SpyToggle
 
@@ -2082,7 +2612,13 @@ HomeTab:CreateSection("Управление")
 FarmToggle = HomeTab:CreateToggle({
    Name = "🚀 Автофарм (клавиша F6)",
    CurrentValue = false,
-   Callback = function(v) setFarm(v) end,
+   Callback = function(v)
+      if not v then
+         if not State.TimerPause then State.ResumeAt = nil end
+         State.TimerPause = false
+      end
+      setFarm(v)
+   end,
 })
 local HudToggle = HomeTab:CreateToggle({
    Name = "📊 Мини-панель (клавиша F7)",
@@ -2118,7 +2654,7 @@ HomeTab:CreateButton({
    Name = "🔎 Найти участок заново (по владельцу/табличке)",
    Callback = function()
       task.spawn(function()
-         if detectPlot(false) then
+         if detectPlot(false, true) then
             notify("🏠 Участок найден", Plot.method .. ": " .. Plot.root:GetFullName(), 7, "plot")
             flashPlot()
          else
@@ -2141,6 +2677,11 @@ L_Income = HomeTab:CreateLabel("📈 Доход: запусти автофарм
 L_Rep = HomeTab:CreateLabel("⭐ Репутация: —")
 L_Actions = HomeTab:CreateLabel("⚡ Действий: 0 (0/мин)")
 L_Time = HomeTab:CreateLabel("⏱️ Сессия: 00:00:00")
+L_Perf = HomeTab:CreateLabel("🎞️ FPS: — | Ping: —")
+HomeTab:CreateButton({
+   Name = "📋 Скопировать отчёт сессии",
+   Callback = function() copyText(sessionReport(), "Отчёт сессии скопирован.") end,
+})
 
 -- АВТОФАРМ
 local FarmTab = Window:CreateTab("🌲 Автофарм", "tree-pine")
@@ -2312,7 +2853,7 @@ FarmTab:CreateInput({
    Flag = "PlaceBtnKW",
    Callback = function(text)
       State.PlaceBtnKW = parseKeywords(text)
-      lastPlaceCheck = 0
+      lastPlaceCheck = -1e9
    end,
 })
 FarmTab:CreateInput({
@@ -2351,6 +2892,44 @@ FarmTab:CreateButton({
          end
       end)
    end,
+})
+
+FarmTab:CreateSection("Таймеры и защита")
+FarmTab:CreateSlider({
+   Name = "Остановить автофарм через (0 = выкл)",
+   Range = { 0, 600 }, Increment = 5, Suffix = " мин", CurrentValue = 0, Flag = "StopAfterMin",
+   Callback = function(v) State.StopAfterMin = v end,
+})
+FarmTab:CreateSlider({
+   Name = "Цикл «работа/отдых»: работать (0 = выкл)",
+   Range = { 0, 180 }, Increment = 5, Suffix = " мин", CurrentValue = 0, Flag = "WorkMin",
+   Callback = function(v) State.WorkMin = v end,
+})
+FarmTab:CreateSlider({
+   Name = "Цикл «работа/отдых»: отдыхать",
+   Range = { 0, 60 }, Increment = 1, Suffix = " мин", CurrentValue = 0, Flag = "RestMin",
+   Callback = function(v) State.RestMin = v end,
+})
+FarmTab:CreateToggle({
+   Name = "Защита от лагов (замедлять при низком FPS)",
+   CurrentValue = true, Flag = "LagGuard",
+   Callback = function(v)
+      State.LagGuard = v
+      if not v then State.LagFactor = 1 end
+   end,
+})
+FarmTab:CreateToggle({
+   Name = "Авто-клейм кнопок Claim на экране",
+   CurrentValue = false, Flag = "AutoClaimUI",
+   Callback = function(v) State.AutoClaimUI = v end,
+})
+FarmTab:CreateInput({
+   Name = "Слова кнопок клейма",
+   CurrentValue = "claim, collect",
+   PlaceholderText = "через запятую",
+   RemoveTextAfterFocusLost = false,
+   Flag = "ClaimKW",
+   Callback = function(text) State.ClaimKW = parseKeywords(text) end,
 })
 
 FarmTab:CreateSection("Авто-цена")
@@ -2427,6 +3006,31 @@ DiagTab:CreateButton({
    end,
 })
 
+DiagTab:CreateSection("Самопроверка и отчёт")
+local SelfView = DiagTab:CreateParagraph({ Title = "Самопроверка", Content = "Нажми кнопку ниже." })
+DiagTab:CreateButton({
+   Name = "🩺 Самопроверка",
+   Callback = function()
+      SelfView:Set({ Title = "Самопроверка", Content = selfCheck() })
+   end,
+})
+DiagTab:CreateButton({
+   Name = "🧰 Скопировать отчёт для разработчика",
+   Callback = function() copyText(devReport(), "Отчёт скопирован — вставь его в чат.") end,
+})
+local ErrView = DiagTab:CreateParagraph({ Title = "Журнал ошибок", Content = "Пусто" })
+DiagTab:CreateButton({
+   Name = "🐞 Показать ошибки",
+   Callback = function()
+      local lines = {}
+      for i = math.max(1, #ErrorLog - 7), #ErrorLog do
+         local e = ErrorLog[i]
+         lines[#lines + 1] = ("[%.0f с] %s: %s"):format(e.t - State.SessionStart, e.where, e.msg)
+      end
+      ErrView:Set({ Title = "Журнал ошибок", Content = (#lines > 0) and table.concat(lines, "\n") or "Ошибок нет ✅" })
+   end,
+})
+
 DiagTab:CreateSection("Что есть на моём участке")
 local PromptInfo = DiagTab:CreateParagraph({ Title = "Промпты участка", Content = "Нажми кнопку ниже." })
 local lastPromptReport = ""
@@ -2443,8 +3047,8 @@ DiagTab:CreateButton({
    Callback = function()
       if lastPromptReport == "" then
          notify("Пусто", "Сначала нажми «Показать промпты моего участка».", 3, "pr")
-      elseif type(setclipboard) == "function" then
-         pcall(setclipboard, lastPromptReport)
+      elseif type(clipFn) == "function" then
+         clip(lastPromptReport)
          notify("Готово", "Список скопирован в буфер.", 3, "pr")
       else
          notify("Нет буфера", "Твой executor не поддерживает setclipboard.", 4, "pr")
@@ -2510,8 +3114,8 @@ DiagTab:CreateButton({
    Callback = function()
       if lastReport == "" then
          notify("Пусто", "Сначала нажми «Сканировать remote».", 3, "scan")
-      elseif type(setclipboard) == "function" then
-         pcall(setclipboard, lastReport)
+      elseif type(clipFn) == "function" then
+         clip(lastReport)
          notify("Готово", "Список скопирован в буфер.", 3, "scan")
       else
          notify("Нет буфера", "Твой executor не поддерживает setclipboard.", 4, "scan")
@@ -2745,27 +3349,22 @@ PlayerTab:CreateToggle({
 -- РАЗНОЕ
 local MiscTab = Window:CreateTab("🎁 Разное", "gift")
 MiscTab:CreateSection("Промокоды")
+MiscTab:CreateParagraph({
+   Title = "Как это работает",
+   Content = "Скрипт сам открывает Menu → Codes, вводит коды и читает ответ игры. Обработанные коды запоминаются. Регистр важен: коды вводятся ровно как написаны.",
+})
+MiscTab:CreateToggle({
+   Name = "Вводить новые коды при запуске",
+   CurrentValue = false, Flag = "AutoCodes",
+   Callback = function(v) State.AutoCodes = v end,
+})
 MiscTab:CreateButton({
-   Name = "🚀 Ввести все коды",
-   Callback = function()
-      playSound("6895079853")
-      local sent, lastErr = 0, nil
-      for _, code in ipairs(ActiveCodes) do
-         local ok, how = redeemOne(code)
-         if ok then
-            sent = sent + 1
-         else
-            lastErr = how
-            if how and how:find("Codes", 1, true) then break end
-         end
-         task.wait(0.6)
-      end
-      if sent > 0 then
-         notify("Коды", ("Отправлено: %d из %d. Часть кодов могла устареть."):format(sent, #ActiveCodes), 5, "codes")
-      else
-         notify("Коды не отправлены", lastErr or "неизвестная ошибка", 6, "codes")
-      end
-   end,
+   Name = "🚀 Ввести новые коды",
+   Callback = function() runCodes(pendingCodes()) end,
+})
+MiscTab:CreateButton({
+   Name = "🔁 Ввести все коды заново",
+   Callback = function() runCodes(ActiveCodes) end,
 })
 MiscTab:CreateInput({
    Name = "Свой промокод",
@@ -2773,11 +3372,21 @@ MiscTab:CreateInput({
    PlaceholderText = "введи код и нажми Enter",
    RemoveTextAfterFocusLost = true,
    Callback = function(text)
-      if text and text ~= "" then
-         local ok, how = redeemOne(text)
-         notify(ok and "Код отправлен" or "Не получилось", ok and text or (how or "ошибка"), 4, "code1")
-      end
+      if text and text ~= "" then runCodes({ text }) end
    end,
+})
+RedeemedInput = MiscTab:CreateInput({
+   Name = "Обработанные коды (память)",
+   CurrentValue = "",
+   PlaceholderText = "через запятую",
+   RemoveTextAfterFocusLost = false,
+   Flag = "RedeemedCodes",
+   Callback = function(text) State.Redeemed = parseCodes(text) end,
+})
+CodesView = MiscTab:CreateParagraph({ Title = "Результаты кодов", Content = "—" })
+MiscTab:CreateButton({
+   Name = "🧹 Забыть обработанные коды",
+   Callback = function() RedeemedInput:Set("") end,
 })
 
 MiscTab:CreateSection("Защита и сервер")
@@ -2848,10 +3457,13 @@ MiscTab:CreateButton({
    end,
 })
 
+end
+
 -- =====================================================================
 -- 14. UI REFRESH, CONNECTIONS, LOOPS
 -- =====================================================================
-local lastPlotRetry = 0
+do
+local lastPlotRetry = -1e9
 
 local function updateUI()
    local now = os.clock()
@@ -2887,6 +3499,7 @@ local function updateUI()
    L_Actions:Set(("⚡ Действий: %d (%.1f/мин)"):format(State.TotalActions, apm))
    L_Time:Set("⏱️ Сессия: " .. fmtTime(now - State.SessionStart))
    DecorLabel:Set("Действий с декором: " .. State.DecorActions)
+   L_Perf:Set(("🎞️ FPS: %.0f | Ping: %.0f мс%s"):format(State.Fps, Player:GetNetworkPing() * 1000, State.LagFactor > 1 and " | 🐢 замедление" or ""))
    do
       local modeTxt
       if State.ZoneMode == "zone" then
@@ -2897,6 +3510,46 @@ local function updateUI()
          modeTxt = "авто"
       end
       L_Zone:Set(("🧭 Зона: %s | точек: %d | поставлено: %d"):format(modeTxt, #Zone.points, State.PlacedCount))
+   end
+
+   -- Защита от лагов: при низком FPS замедляем циклы
+   if State.LagGuard then
+      if State.Fps < 12 then
+         State.LowSince = State.LowSince or now
+         State.HighSince = nil
+         if now - State.LowSince > 8 and State.LagFactor == 1 then
+            State.LagFactor = 2
+            notify("🐢 Низкий FPS", "Замедляю действия, чтобы разгрузить игру.", 6, "lag", 30)
+         end
+      elseif State.Fps > 25 then
+         State.HighSince = State.HighSince or now
+         State.LowSince = nil
+         if now - State.HighSince > 8 and State.LagFactor > 1 then
+            State.LagFactor = 1
+            notify("✅ FPS в норме", "Возвращаю обычную скорость.", 4, "lag", 30)
+         end
+      else
+         State.LowSince, State.HighSince = nil, nil
+      end
+   end
+
+   -- Таймеры: остановка через N минут / цикл «работа-отдых»
+   if State.AutoFarm and State.FarmStart then
+      local mins = (now - State.FarmStart) / 60
+      if State.WorkMin > 0 and State.RestMin > 0 and mins >= State.WorkMin then
+         State.ResumeAt = now + State.RestMin * 60
+         State.TimerPause = true
+         FarmToggle:Set(false)
+         notify("😴 Отдых", ("Автофарм на паузе %d мин, потом продолжится сам."):format(math.floor(State.RestMin)), 6, "timer")
+      elseif State.StopAfterMin > 0 and mins >= State.StopAfterMin then
+         State.ResumeAt = nil
+         State.TimerPause = true
+         FarmToggle:Set(false)
+         notify("⏲️ Таймер", "Автофарм остановлен по таймеру.", 6, "timer")
+      end
+   elseif not State.AutoFarm and State.ResumeAt and now >= State.ResumeAt then
+      State.ResumeAt = nil
+      FarmToggle:Set(true)
    end
 
    HUD.Update(
@@ -2994,10 +3647,19 @@ task.spawn(function()
    if not State.Running then return end
    local hrp = getHRP()
    if hrp and not State.SafePos then State.SafePos = hrp.Position end
-   if detectPlot(false) then
+   if detectPlot(false, true) then
       notify("🏠 Участок найден", Plot.method .. ": " .. Plot.root.Name, 7, "plot")
    else
       notify("⚠️ Участок не найден", "Встань на свой участок и нажми «Главная» → «Это мой участок».", 10, "plot")
+   end
+end)
+
+-- Авто-ввод новых кодов при запуске (после загрузки настроек)
+task.spawn(function()
+   task.wait(12)
+   if State.Running and State.AutoCodes then
+      local list = pendingCodes()
+      if #list > 0 then runCodes(list) end
    end
 end)
 
@@ -3014,8 +3676,9 @@ task.spawn(function()
          end
          if State.AutoFarm then farmStep() end
          if State.AutoDecor and due("decor", 6) then decorStep() end
+         if State.AutoClaimUI and due("claimui", 5) then claimStep() end
       end)
-      if not ok then dbg("Ошибка цикла:", err) end
+      if not ok then logError("main loop", err) end
    end
 end)
 
@@ -3024,7 +3687,7 @@ task.spawn(function()
    while State.Running do
       task.wait(1)
       local ok, err = pcall(updateUI)
-      if not ok then dbg("Ошибка UI:", err) end
+      if not ok then logError("ui loop", err) end
    end
 end)
 
@@ -3046,9 +3709,12 @@ task.spawn(function()
    end
 end)
 
+end
+
 -- =====================================================================
 -- 15. UNLOAD & START
 -- =====================================================================
+do
 local function Unload()
    State.Running = false
    State.AutoFarm, State.AutoDecor = false, false
@@ -3068,4 +3734,5 @@ env.CheatHubWinter = { Unload = Unload }
 
 Rayfield:LoadConfiguration()
 playSound("9118823103")
-notify("❄️ Winter Magic", "CheatHub v11 загружен! Меню: клавиша K, автофарм: F6.", 6, "loaded")
+notify("❄️ Winter Magic", "CheatHub v12 загружен! Меню: клавиша K, автофарм: F6.", 6, "loaded")
+end
